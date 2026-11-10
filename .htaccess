@@ -1,0 +1,41 @@
+Options -Indexes
+DirectoryIndex public/index.php
+RewriteEngine On
+# Never expose source, configuration, database, backups or tests.
+RewriteRule (^|/)\. - [F,L]
+RewriteRule ^(?:src|php|database|data|scripts|tests|docs|tools|node_modules|backups)(?:/|$) - [F,L,NC]
+RewriteRule \.(?:sql|sqlite|sqlite-wal|sqlite-shm|env|log|md|zip|bak|mjs|yml|yaml|lock)$ - [F,L,NC]
+RewriteRule ^(?:package(?:-lock)?\.json|Dockerfile|LICENSE)$ - [F,L,NC]
+RewriteRule ^(?:api/.*|payment/callback|healthz|sitemap\.xml|robots\.txt)$ api.php [L,QSA]
+RewriteRule ^api\.php$ - [L]
+RewriteRule ^(index|category|product|cart|configurator|admin|profile|login|register|about|contact|blog|warranty)\.html$ /$1 [R=301,L]
+RewriteRule ^index$ / [R=301,L]
+# Only known asset types are public.
+RewriteRule ^((?:assets|images)/[a-zA-Z0-9/_.-]+\.(?:css|js|ttf|woff2|svg|png|jpg|jpeg|webp))$ public/$1 [L,NC]
+RewriteRule ^(manifest\.json|sw\.js|offline\.html|404\.html)$ public/$1 [L]
+RewriteCond %{THE_REQUEST} \s/+public[/\s?] [NC]
+RewriteRule ^public/ - [F,L]
+RewriteRule ^public/(?:index\.php|(?:assets|images)/|manifest\.json|sw\.js|offline\.html|404\.html) - [L]
+RewriteRule ^ public/index.php [L,QSA]
+<IfModule mod_headers.c>
+Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" "expr=%{HTTPS} == 'on'"
+Header always set X-Content-Type-Options "nosniff"
+Header always set X-Frame-Options "DENY"
+Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+<Files "sw.js">
+Header set Cache-Control "no-cache"
+Header set Service-Worker-Allowed "/"
+</Files>
+</IfModule>
+<IfModule mod_deflate.c>
+AddOutputFilterByType DEFLATE text/html text/css application/javascript text/javascript application/json image/svg+xml
+</IfModule>
+
+<IfModule mod_php.c>
+php_flag display_errors Off
+php_flag display_startup_errors Off
+php_flag log_errors On
+php_flag expose_php Off
+</IfModule>

@@ -1,0 +1,25 @@
+Options -Indexes
+DirectoryIndex index.php
+RewriteEngine On
+RewriteRule (^|/)\. - [F,L]
+RewriteRule ^(index|category|product|cart|configurator|admin|profile|login|register|about|contact|blog|warranty)\.html$ /$1 [R=301,L]
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^(?:assets|images)/ - [L]
+RewriteRule ^(?:manifest\.json|sw\.js|offline\.html|404\.html|index\.html)$ - [L]
+RewriteRule ^index\.php$ - [L]
+RewriteRule ^ index.php [L,QSA]
+<IfModule mod_headers.c>
+Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" "expr=%{HTTPS} == 'on'"
+Header always set X-Content-Type-Options "nosniff"
+Header always set X-Frame-Options "DENY"
+Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+</IfModule>
+
+<IfModule mod_php.c>
+php_flag display_errors Off
+php_flag display_startup_errors Off
+php_flag log_errors On
+php_flag expose_php Off
+</IfModule>
