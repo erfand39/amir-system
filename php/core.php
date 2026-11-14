@@ -1154,6 +1154,13 @@ final class Shop
         unset($o["quote_json"], $o["guest_session_id"]);
         if ($admin) {
             $o["next_statuses"] = $this->nextOrderStatuses($o);
+            $o["unresolved_payments"] = $o["payment_method"] === "online" && $o["payment_status"] === "unpaid"
+                ? $this->db->all(
+                    "SELECT id,status,updated_at FROM payments WHERE order_id=? AND authority IS NULL
+                     AND (status='unknown' OR (status='requesting' AND updated_at<=?)) ORDER BY updated_at,id",
+                    [$oid, later(-120)],
+                )
+                : [];
             $o["events"] = $this->db->all(
                 "SELECT a.action,a.details_json,a.created_at,u.name actor FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_id WHERE a.entity_id=? ORDER BY a.created_at,a.id",
                 [$oid],

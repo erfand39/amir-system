@@ -157,6 +157,25 @@ $checked = $payment->recheck($online["id"], $buyer);
 $payment->verify("ONLINE-AUTH-WORKFLOW1", "OK");
 check($checked["requires_review"] && $available() === $base && $shop->order($online["id"], $buyer)["status"] === "payment_review", "Late gateway verification and replay are reconciled once");
 
+$unknown = $shop->createOrder($d, $buyer, "test-workflow-unknown-online");
+$route = "admin/orders/" . $unknown["id"] . "/resolve-payment";
+$timeout = new Payment($shop, fn() => throw new HttpError("Provider timeout", 502));
+check(rejects(502, fn() => $timeout->request($unknown["id"], $buyer)) &&
+    rejects(409, fn() => $payment->request($unknown["id"], $buyer)), "Unknown gateway attempt blocks duplicate requests");
+$queue = $call("GET", "admin/orders", [], $owner, ["status" => "unknown_payments"]);
+$attempt = $shop->order($unknown["id"], $owner, true)["unresolved_payments"][0]["id"];
+check($queue["total"] === 1 && $queue["items"][0]["id"] === $unknown["id"] &&
+    empty($shop->order($unknown["id"], $buyer)["unresolved_payments"]), "Unknown attempt appears in the operational queue only");
+$resolution = ["attempt_id" => $attempt, "confirmed" => true, "authority" => "RECOVERED-AUTH-1234"];
+check(rejects(403, fn() => $call("POST", $route, $resolution, $manager)) &&
+    rejects(409, fn() => $call("POST", $route, ["attempt_id" => $attempt, "confirmed" => true], $owner)), "Only the owner can review and active orders cannot be closed without an authority");
+$recovered = $call("POST", $route, $resolution, $owner);
+check($recovered["can_recheck_online"] && $recovered["unresolved_payments"] === [] &&
+    $call("POST", $route, $resolution, $owner)["can_recheck_online"], "Restored authority enables recheck and is idempotent");
+$provider = new Payment($shop, fn() => ["code" => 100, "ref_id" => "RECOVERED-REF-1234"]);
+check($provider->recheck($unknown["id"], $owner, true)["paid"], "Recovered payment is recorded only after gateway verification");
+$shop->refund($unknown["id"], ["reference" => "RECOVERED-REFUND-002", "confirmed" => true], $owner);
+
 check(rejects(403, fn() => $call("GET", "admin/users", [], $manager)), "User administration is owner-only");
 $found = $call("GET", "admin/users", [], $owner, ["q" => "۰۹۱۱۱۱۱۰۰۰۳"]);
 check($found["total"] === 1 && $found["items"][0]["order_count"] >= 5, "Owner can locate users and count their orders");

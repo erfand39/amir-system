@@ -493,6 +493,7 @@ final class API
                 return match ($parts[3]) {
                     "status" => $s->transition($key, txt($b["status"] ?? "", 2, 32), $session, $b),
                     "record-payment" => $s->recordPayment($key, $b, $session),
+                    "resolve-payment" => $this->payment->resolveUnknown($key, $b, $session),
                     "refund" => $s->refund($key, $b, $session),
                     "return" => $s->receiveReturn($key, $b, $session),
                     default => throw new HttpError("مسیر درخواست پیدا نشد.", 404),

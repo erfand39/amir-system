@@ -20,6 +20,9 @@ final class Admin
                 "ready_to_pack" => "SELECT COUNT(*) n FROM orders WHERE status IN ('confirmed','processing') AND (payment_status='paid' OR payment_method='cod') AND stock_released=0",
                 "transfer_review" => "SELECT COUNT(*) n FROM order_transfer_receipts t JOIN orders o ON o.id=t.order_id WHERE o.payment_status='unpaid' AND o.status IN ('pending_payment','confirmed','processing')",
                 "payment_review" => "SELECT COUNT(*) n FROM orders WHERE status='payment_review'",
+                "unknown_payments" => "SELECT COUNT(*) n FROM orders o WHERE o.payment_status='unpaid' AND EXISTS (
+                    SELECT 1 FROM payments p WHERE p.order_id=o.id AND p.authority IS NULL
+                    AND (p.status='unknown' OR (p.status='requesting' AND p.updated_at<=?)))",
                 "returns_expected" => "SELECT COUNT(*) n FROM orders WHERE status='refunded' AND stock_released=0",
                 "low_stock" =>
                     "SELECT COUNT(*) n FROM products WHERE active=1 AND stock<3",
@@ -32,7 +35,7 @@ final class Admin
             ]
             as $key => $sql
         ) {
-            $out[$key] = (int) $this->db->get($sql)["n"];
+            $out[$key] = (int) $this->db->get($sql, $key === "unknown_payments" ? [later(-120)] : [])["n"];
         }
         $out["engine"] = $this->db->driver;
         return $out;
@@ -128,6 +131,11 @@ final class Admin
                 }
                 if ($status === "transfer_review") {
                     $filters[] = "tr.order_id IS NOT NULL AND o.payment_status='unpaid' AND o.status IN ('pending_payment','confirmed','processing')";
+                } elseif ($status === "unknown_payments") {
+                    $filters[] = "o.payment_status='unpaid' AND EXISTS (SELECT 1 FROM payments p
+                        WHERE p.order_id=o.id AND p.authority IS NULL
+                        AND (p.status='unknown' OR (p.status='requesting' AND p.updated_at<=?)))";
+                    $args[] = later(-120);
                 } elseif ($status === "return_expected") {
                     $filters[] = "o.status='refunded' AND o.stock_released=0";
                 } elseif ($status !== "") {

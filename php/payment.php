@@ -125,11 +125,11 @@ final class Payment
             );
             $active = $this->db->tx(function () use ($oid, $p, $d) {
                 $current = $this->db->lock("SELECT status,payment_status,stock_released,expires_at FROM orders WHERE id=?", [$oid]);
-                $this->db->run(
-                    "UPDATE payments SET authority=?,status='pending',updated_at=? WHERE id=?",
+                $updated = $this->db->run(
+                    "UPDATE payments SET authority=?,status='pending',updated_at=? WHERE id=? AND status='requesting' AND authority IS NULL",
                     [$d["authority"], dt(), $p["id"]],
                 );
-                return $current && $current["status"] === "pending_payment" && $current["payment_status"] === "unpaid" &&
+                return $updated && $current && $current["status"] === "pending_payment" && $current["payment_status"] === "unpaid" &&
                     !$current["stock_released"] && $current["expires_at"] > dt();
             });
             need($active, "سفارش در زمان اتصال به درگاه بسته شد.", 409);
@@ -155,6 +155,41 @@ final class Payment
         );
         need($p, "پرداخت آنلاین قابل استعلام پیدا نشد.", 409);
         return $this->verify($p["authority"], "OK");
+    }
+    public function resolveUnknown(string $oid, array $data, array $session): array
+    {
+        $actor = $this->shop->admin($session, true);
+        need(($data["confirmed"] ?? false) === true, "تطبیق با پنل پذیرنده را تأیید کنید.");
+        $attempt = txt($data["attempt_id"] ?? "", 1, 64);
+        $authority = txt($data["authority"] ?? "", 0, 100);
+        need($authority === "" || preg_match('/^[A-Za-z0-9_-]{10,100}$/D', $authority), "شناسه درگاه معتبر نیست.");
+        return $this->db->tx(function () use ($oid, $attempt, $authority, $actor, $session) {
+            $order = $this->db->lock("SELECT * FROM orders WHERE id=?", [$oid]);
+            need($order && $order["payment_method"] === "online" && $order["payment_status"] === "unpaid",
+                "این سفارش پرداخت نامشخص قابل رسیدگی ندارد.", 409);
+            $payment = $this->db->lock("SELECT * FROM payments WHERE id=? AND order_id=? AND method='online'", [$attempt, $oid]);
+            need($payment, "درخواست پرداخت پیدا نشد.", 404);
+            if ($payment["status"] === "pending" && $authority !== "" && $payment["authority"] === $authority) {
+                return $this->shop->order($oid, $session, true);
+            }
+            if ($payment["status"] === "cancelled" && $authority === "") {
+                return $this->shop->order($oid, $session, true);
+            }
+            need(!$payment["authority"] && ($payment["status"] === "unknown" ||
+                ($payment["status"] === "requesting" && $payment["updated_at"] <= later(-120))),
+                "درخواست هنوز در حال پردازش است یا قبلاً تعیین تکلیف شده است.", 409);
+            if ($authority === "") {
+                need(in_array($order["status"], ["cancelled", "expired"], true),
+                    "برای بستن درخواست بدون شناسه درگاه، سفارش باید بسته شده باشد.", 409);
+            }
+            $this->db->run("UPDATE payments SET authority=?,status=?,updated_at=? WHERE id=?",
+                [$authority === "" ? null : $authority, $authority === "" ? "cancelled" : "pending", dt(), $attempt]);
+            $this->shop->audit($actor, "payment.unknown_reviewed", $oid, [
+                "attempt_id" => $attempt,
+                "outcome" => $authority === "" ? "closed" : "authority_restored",
+            ]);
+            return $this->shop->order($oid, $session, true);
+        });
     }
     private function start(string $authority): string
     {

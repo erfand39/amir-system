@@ -596,6 +596,7 @@ const adminFilterOptions = {
   orders: [
     ...["pending_payment", "confirmed", "processing", "shipped", "delivered", "cancelled", "expired", "payment_review", "refunded"].map((k) => [k, statuses[k]]),
     ["transfer_review", "رسید واریز در انتظار بررسی"],
+    ["unknown_payments", "پرداخت آنلاین نامشخص"],
     ["return_expected", "مرجوعی در انتظار انبار"],
   ],
   users: [...Object.entries(userRoles), ["inactive", "حساب غیرفعال"]],
@@ -655,7 +656,7 @@ async function adminPage() {
       )
       .join(
         "",
-      )}</div><section class="card notice-list"><h3>نیازمند رسیدگی</h3><p>${num(data.new_messages)} پیام تازه در پشتیبانی</p><p>${num(data.pending_reviews)} دیدگاه در انتظار بررسی</p><ul class="order-history"><li>${num(data.ready_to_pack)} سفارش در صف آماده‌سازی</li><li><a class="text-link" href="/admin?section=orders&status=transfer_review">${num(data.transfer_review)} رسید واریز در انتظار تأیید</a></li><li><a class="text-link" href="/admin?section=orders&status=payment_review">${num(data.payment_review)} دریافت دیرهنگام نیازمند رسیدگی</a></li><li><a class="text-link" href="/admin?section=orders&status=return_expected">${num(data.returns_expected)} مرجوعی در انتظار دریافت انبار</a></li></ul><div class="button-row"><a class="btn secondary small" href="/admin?section=orders">مدیریت سفارش‌ها</a><a class="btn secondary small" href="/admin?section=stock_movements">بررسی انبار</a></div></section><section class="card notice-list"><h3>کنترل‌های فروشگاه</h3><p>مبلغ سفارش در سرور محاسبه می‌شود. موجودی و سندهای مالی با عملیات مربوط به خود ثبت می‌شوند. برای قیمت، گارانتی و مشخصات کالا اطلاعات تأییدشده وارد کنید.</p></section>`;
+      )}</div><section class="card notice-list"><h3>نیازمند رسیدگی</h3><p>${num(data.new_messages)} پیام تازه در پشتیبانی</p><p>${num(data.pending_reviews)} دیدگاه در انتظار بررسی</p><ul class="order-history"><li>${num(data.ready_to_pack)} سفارش در صف آماده‌سازی</li><li><a class="text-link" href="/admin?section=orders&status=transfer_review">${num(data.transfer_review)} رسید واریز در انتظار تأیید</a></li><li><a class="text-link" href="/admin?section=orders&status=unknown_payments">${num(data.unknown_payments)} پرداخت آنلاین نامشخص</a></li><li><a class="text-link" href="/admin?section=orders&status=payment_review">${num(data.payment_review)} دریافت دیرهنگام نیازمند رسیدگی</a></li><li><a class="text-link" href="/admin?section=orders&status=return_expected">${num(data.returns_expected)} مرجوعی در انتظار دریافت انبار</a></li></ul><div class="button-row"><a class="btn secondary small" href="/admin?section=orders">مدیریت سفارش‌ها</a><a class="btn secondary small" href="/admin?section=stock_movements">بررسی انبار</a></div></section><section class="card notice-list"><h3>کنترل‌های فروشگاه</h3><p>مبلغ سفارش در سرور محاسبه می‌شود. موجودی و سندهای مالی با عملیات مربوط به خود ثبت می‌شوند. برای قیمت، گارانتی و مشخصات کالا اطلاعات تأییدشده وارد کنید.</p></section>`;
   } else if (adminKind === "health") {
     const data = await api("admin/health");
     const rows = [...data.checks, ...data.deployment_checks];
@@ -962,6 +963,7 @@ async function showAdminOrder(oid) {
       "order.created": "ثبت سفارش",
       "order.status": statuses[details.to],
       "payment.manual": "ثبت دریافت وجه",
+      "payment.unknown_reviewed": "تعیین تکلیف درخواست درگاه",
       "payment.verified": "تأیید پرداخت آنلاین",
       "payment.transfer_submitted": "ثبت مرجع واریز توسط مشتری",
       "payment.refunded": "ثبت بازپرداخت",
@@ -986,6 +988,7 @@ async function showAdminOrder(oid) {
       ${next.includes("shipped") ? `<form id="ship-order-form" class="order-action" data-id="${esc(oid)}"><h3>ثبت ارسال</h3><div class="form-grid">${field("carrier", "شرکت حمل یا روش ارسال", "", "text", true)}${field("tracking_code", "کد رهگیری مرسوله", "", "text", true)}</div><div class="form-error" role="alert"></div><button class="btn">ثبت ارسال و کد رهگیری</button></form>` : ""}
       ${o.status === "shipped" && o.payment_status === "unpaid" ? '<p class="notice">پس از ثبت دریافت وجه، ثبت تحویل فعال می‌شود.</p>' : ""}
       ${canRecord ? `<form id="record-payment-form" class="order-action" data-id="${esc(oid)}"><h3>ثبت دریافت وجه</h3><p class="small muted">مرجع را پس از تطبیق با دریافت واقعی ثبت کنید.</p>${field("reference", "شماره رسید یا مرجع دریافت", o.transfer_receipt?.reference || "", "text", true)}<div class="form-error" role="alert"></div><button class="btn secondary">ثبت دریافت تأییدشده</button></form>` : ""}
+      ${owner ? o.unresolved_payments.map((payment) => `<form class="order-action" data-payment-review data-id="${esc(oid)}"><h3>رسیدگی به پرداخت نامشخص</h3><p class="small muted">سفارش و مبلغ را با پنل پذیرنده تطبیق دهید. در صورت وجود تراکنش، شناسهٔ درگاه را وارد و سپس «استعلام از درگاه» را بزنید. برای بستن درخواست فاقد تراکنش، ابتدا سفارش را ببندید و شناسه را خالی بگذارید.</p><input type="hidden" name="attempt_id" value="${esc(payment.id)}">${field("authority", "شناسهٔ درگاه (Authority)") }<label class="check"><input type="checkbox" name="confirmed" required>نتیجه را در پنل پذیرنده بررسی کردم</label><div class="form-error" role="alert"></div><button class="btn secondary">ثبت نتیجه بررسی</button></form>`).join("") : ""}
       ${owner && o.payment_status === "paid" ? `<details class="order-action"><summary>ثبت برگشت کامل وجه</summary><form id="refund-form" data-id="${esc(oid)}"><p class="small muted">مرجع بازپرداخت انجام‌شده را وارد کنید.${shipped ? "" : " موجودی رزروشده به‌صورت خودکار آزاد می‌شود."}</p>${field("refund_reference", "مرجع بازپرداخت", "", "text", true)}${shipped && !o.stock_released ? '<label class="check"><input type="checkbox" name="restock">همه اقلام سالم دریافت شده و به موجودی فروش برمی‌گردند</label>' : ""}<label class="check"><input type="checkbox" name="confirmed" required>بازپرداخت کامل انجام شده است</label><div class="form-error" role="alert"></div><button class="btn secondary">ثبت سند برگشت وجه</button></form></details>` : ""}
       ${o.status === "refunded" && !o.stock_released ? `<form id="return-form" class="order-action" data-id="${esc(oid)}"><h3>دریافت مرجوعی در انبار</h3><label class="check"><input type="checkbox" name="confirmed" required>همه اقلام سالم تحویل انبار شده و قابل فروش هستند</label><div class="form-error" role="alert"></div><button class="btn secondary">بازگرداندن اقلام به موجودی</button></form>` : ""}
     </div>
@@ -1338,7 +1341,7 @@ document.addEventListener("submit", (e) => {
   e.preventDefault();
   formTask(form, async () => {
     const data = formData(form);
-    switch (form.id) {
+    switch (form.matches("[data-payment-review]") ? "resolve-payment-form" : form.id) {
       case "site-search":
         return navigate("/category?q=" + encodeURIComponent(data.q));
       case "filter-form": {
@@ -1567,6 +1570,11 @@ document.addEventListener("submit", (e) => {
           method: "POST", body: { confirmed: form.elements.confirmed.checked },
         });
         toast("اقلام مرجوعی به انبار برگشت.");
+        return refreshAdminOrder(form.dataset.id);
+      case "resolve-payment-form":
+        data.confirmed = form.elements.confirmed.checked;
+        await api("admin/orders/" + form.dataset.id + "/resolve-payment", { method: "POST", body: data });
+        toast("نتیجه بررسی ثبت شد.");
         return refreshAdminOrder(form.dataset.id);
       case "record-payment-form":
         await api("admin/orders/" + form.dataset.id + "/record-payment", { method: "POST", body: data });
