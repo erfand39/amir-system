@@ -1460,6 +1460,8 @@ final class Shop
                 );
             }
             if ($next === "delivered") {
+                need($this->db->get("SELECT order_id FROM order_shipments WHERE order_id=?", [$oid]),
+                    "پیش از ثبت تحویل، اطلاعات رهگیری ارسال را تکمیل کنید.", 409);
                 $this->db->run("UPDATE order_shipments SET delivered_at=? WHERE order_id=?", [$now, $oid]);
             }
             if ($next === "processing" && $o["payment_method"] === "cod") {
@@ -1481,25 +1483,43 @@ final class Shop
     {
         $actor = $this->admin($s);
         [$carrier, $tracking] = $this->shipmentData($d);
-        return $this->db->tx(function () use ($oid, $carrier, $tracking, $s, $actor) {
+        return $this->db->tx(function () use ($oid, $carrier, $tracking, $d, $s, $actor) {
             $o = $this->db->lock("SELECT * FROM orders WHERE id=?", [$oid]);
             need($o, "سفارش پیدا نشد.", 404);
-            need($o["status"] === "shipped", "اطلاعات رهگیری فقط پیش از ثبت تحویل قابل اصلاح است.", 409);
             $ship = $this->db->get("SELECT * FROM order_shipments WHERE order_id=?", [$oid]);
+            need($o["status"] === "shipped" || $o["status"] === "delivered",
+                "تکمیل رهگیری برای این وضعیت سفارش مجاز نیست.", 409);
+            if ($o["status"] === "delivered") {
+                $deliveredAt = calendar_stamp($d["delivered_at"] ?? null);
+                if ($ship && $ship["delivered_at"] === $deliveredAt &&
+                    $ship["carrier"] === $carrier && $ship["tracking_code"] === $tracking) {
+                    return $this->order($oid, $s, true);
+                }
+                need(!$ship || $ship["delivered_at"] === null,
+                    "اطلاعات ارسال و تحویل قبلاً تکمیل شده است.", 409);
+            } else {
+                $deliveredAt = null;
+            }
+            $shippedAt = $ship["shipped_at"] ?? null;
             if (!$ship) {
-                $shippedAt = null;
                 foreach ($this->db->all("SELECT details_json,created_at FROM audit_logs WHERE entity_id=? AND action='order.status' ORDER BY created_at DESC", [$oid]) as $event) {
                     if ((decode_json($event["details_json"])["to"] ?? null) === "shipped") {
                         $shippedAt = $event["created_at"];
                         break;
                     }
                 }
-                $this->db->run("INSERT INTO order_shipments(order_id,carrier,tracking_code,shipped_at) VALUES(?,?,?,?)",
-                    [$oid, $carrier, $tracking, $shippedAt]);
-            } elseif ($ship["carrier"] === $carrier && $ship["tracking_code"] === $tracking) {
+            }
+            if ($deliveredAt !== null) {
+                need($deliveredAt <= dt() && ($shippedAt === null || $deliveredAt >= $shippedAt),
+                    "تاریخ تحویل باید پس از ارسال و تا امروز باشد.");
+            }
+            if (!$ship) {
+                $this->db->run("INSERT INTO order_shipments(order_id,carrier,tracking_code,shipped_at,delivered_at) VALUES(?,?,?,?,?)",
+                    [$oid, $carrier, $tracking, $shippedAt, $deliveredAt]);
+            } elseif (!$deliveredAt && $ship["carrier"] === $carrier && $ship["tracking_code"] === $tracking) {
                 return $this->order($oid, $s, true);
             } else {
-                $this->db->run("UPDATE order_shipments SET carrier=?,tracking_code=? WHERE order_id=?", [$carrier, $tracking, $oid]);
+                $this->db->run("UPDATE order_shipments SET carrier=?,tracking_code=?,delivered_at=? WHERE order_id=?", [$carrier, $tracking, $deliveredAt, $oid]);
             }
             $this->db->run("UPDATE orders SET updated_at=? WHERE id=?", [dt(), $oid]);
             $this->audit($actor, "order.shipment_updated", $oid);

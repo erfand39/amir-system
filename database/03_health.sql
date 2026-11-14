@@ -29,4 +29,4 @@ SELECT COUNT(*) AS violations FROM (SELECT i.order_id,i.product_id,SUM(i.qty) qt
 SELECT COUNT(*) AS violations FROM coupons c LEFT JOIN (SELECT coupon_id,COUNT(*) n FROM orders WHERE coupon_id IS NOT NULL AND stock_released=0 GROUP BY coupon_id) o ON o.coupon_id=c.id WHERE c.used_count<>COALESCE(o.n,0);
 
 -- shipment_records
-SELECT COUNT(*) AS violations FROM order_shipments s JOIN orders o ON o.id=s.order_id WHERE o.status NOT IN ('shipped','delivered','refunded') OR (o.status='delivered' AND s.delivered_at IS NULL) OR (o.status='shipped' AND s.delivered_at IS NOT NULL) OR s.delivered_at<s.shipped_at;
+SELECT COUNT(*) AS violations FROM orders o LEFT JOIN order_shipments s ON o.id=s.order_id WHERE (o.status IN ('shipped','delivered') AND s.order_id IS NULL) OR (s.order_id IS NOT NULL AND o.status NOT IN ('shipped','delivered','refunded')) OR (o.status='delivered' AND s.delivered_at IS NULL) OR (o.status='shipped' AND s.delivered_at IS NOT NULL) OR s.delivered_at<s.shipped_at;

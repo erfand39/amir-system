@@ -47,6 +47,6 @@
   {
     "id": "shipment_records",
     "label": "سازگاری ثبت ارسال و تحویل با وضعیت سفارش",
-    "sql": "SELECT COUNT(*) n FROM order_shipments s JOIN orders o ON o.id=s.order_id WHERE o.status NOT IN ('shipped','delivered','refunded') OR (o.status='delivered' AND s.delivered_at IS NULL) OR (o.status='shipped' AND s.delivered_at IS NOT NULL) OR s.delivered_at<s.shipped_at"
+    "sql": "SELECT COUNT(*) n FROM orders o LEFT JOIN order_shipments s ON o.id=s.order_id WHERE (o.status IN ('shipped','delivered') AND s.order_id IS NULL) OR (s.order_id IS NOT NULL AND o.status NOT IN ('shipped','delivered','refunded')) OR (o.status='delivered' AND s.delivered_at IS NULL) OR (o.status='shipped' AND s.delivered_at IS NOT NULL) OR s.delivered_at<s.shipped_at"
   }
 ]

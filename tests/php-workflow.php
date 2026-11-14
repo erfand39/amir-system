@@ -119,6 +119,17 @@ check(rejects(409, fn() => $call("POST", $codPath . "/status", ["status" => "del
 $call("POST", $codPath . "/record-payment", ["reference" => "COD-RECEIPT-002"], $owner);
 $call("POST", $codPath . "/status", ["status" => "delivered"], $manager);
 check($shop->order($cod["id"], $buyer)["status"] === "delivered", "Collected cash order can be delivered");
+$shipment = $shop->order($cod["id"], $buyer)["shipment"];
+$db->run("DELETE FROM order_shipments WHERE order_id=?", [$cod["id"]]);
+$db->run("UPDATE orders SET status='shipped' WHERE id=?", [$cod["id"]]);
+check(rejects(409, fn() => $call("POST", $codPath . "/status", ["status" => "delivered"], $manager)) &&
+    !health_report($shop)["integrity_ok"], "Missing historical shipment blocks delivery and fails the health check");
+$db->run("UPDATE orders SET status='delivered' WHERE id=?", [$cod["id"]]);
+$history = array_intersect_key($shipment, array_flip(["carrier", "tracking_code", "delivered_at"]));
+$historyFixed = $call("PUT", $codPath . "/shipment", $history, $manager);
+check($historyFixed["shipment"]["delivered_at"] === $shipment["delivered_at"] &&
+    $call("PUT", $codPath . "/shipment", $history, $manager)["shipment"] === $historyFixed["shipment"] &&
+    health_report($shop)["integrity_ok"], "Recorded historical delivery is reconciled without changing the order status");
 
 $stock = ["product_id" => $pid, "type" => "in", "quantity" => 2, "notes" => "Delivery note 501", "event_key" => "workflow-stock-key-0001"];
 $stockResult = $call("POST", "admin/stock", $stock, $manager);
