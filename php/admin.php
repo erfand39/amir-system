@@ -109,6 +109,43 @@ final class Admin
         }
         return $rows;
     }
+    public function finance(array $session, array $query): array
+    {
+        $this->shop->admin($session, true);
+        $zone = new DateTimeZone("Asia/Tehran");
+        $utc = new DateTimeZone("UTC");
+        $today = new DateTimeImmutable("today", $zone);
+        $days = [];
+        foreach (["from" => $today->modify("-29 days"), "to" => $today] as $key => $default) {
+            $value = $query[$key] ?? $default->format("Y-m-d");
+            need(is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $value), "قالب تاریخ معتبر نیست.");
+            calendar_stamp($value);
+            $days[$key] = new DateTimeImmutable($value, $zone);
+        }
+        need($days["from"] <= $days["to"] && $days["from"]->diff($days["to"])->days <= 365,
+            "بازهٔ گزارش باید حداکثر ۳۶۶ روز باشد.");
+        $rows = $this->db->all(
+            "SELECT CASE WHEN p.method='refund' THEN o.payment_method ELSE p.method END AS method,
+                SUM(CASE WHEN p.status='paid' THEN p.amount ELSE 0 END) AS received,
+                SUM(CASE WHEN p.status='refunded' THEN p.amount ELSE 0 END) AS refunded,
+                SUM(CASE WHEN p.status='paid' THEN 1 ELSE 0 END) AS payment_count,
+                SUM(CASE WHEN p.status='refunded' THEN 1 ELSE 0 END) AS refund_count
+             FROM payments p JOIN orders o ON o.id=p.order_id
+             WHERE p.status IN ('paid','refunded') AND p.updated_at>=? AND p.updated_at<?
+             GROUP BY CASE WHEN p.method='refund' THEN o.payment_method ELSE p.method END ORDER BY method",
+            [
+                $days["from"]->setTimezone($utc)->format("Y-m-d H:i:s"),
+                $days["to"]->modify("+1 day")->setTimezone($utc)->format("Y-m-d H:i:s"),
+            ],
+        );
+        foreach ($rows as &$row) {
+            foreach (["received", "refunded", "payment_count", "refund_count"] as $field) {
+                $row[$field] = (int) $row[$field];
+            }
+            $row["net"] = $row["received"] - $row["refunded"];
+        }
+        return ["from" => $days["from"]->format("Y-m-d"), "to" => $days["to"]->format("Y-m-d"), "items" => $rows];
+    }
     private function operationalList(string $kind, array $q): array
     {
         $page = integer_value($q["page"] ?? 1, 1, 1000000);

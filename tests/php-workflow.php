@@ -198,6 +198,13 @@ check($recovered["can_recheck_online"] && $recovered["unresolved_payments"] === 
 $provider = new Payment($shop, fn() => ["code" => 100, "ref_id" => "RECOVERED-REF-1234"]);
 check($provider->recheck($unknown["id"], $owner, true)["paid"], "Recovered payment is recorded only after gateway verification");
 $shop->refund($unknown["id"], ["reference" => "RECOVERED-REFUND-002", "confirmed" => true], $owner);
+$finance = $call("GET", "admin/finance", [], $owner);
+$byMethod = array_column($finance["items"], null, "method");
+check($byMethod["online"]["received"] === $online["total_amount"] + $unknown["total_amount"] &&
+    $byMethod["online"]["refunded"] === $unknown["total_amount"] &&
+    $byMethod["online"]["net"] === $online["total_amount"], "Finance report reconciles receipts and refunds by original method");
+check(rejects(403, fn() => $call("GET", "admin/finance", [], $manager)) &&
+    rejects(400, fn() => $call("GET", "admin/finance", [], $owner, ["from" => "2025-02-29"])), "Finance report is owner-only and validates its date range");
 
 check(rejects(403, fn() => $call("GET", "admin/users", [], $manager)), "User administration is owner-only");
 $found = $call("GET", "admin/users", [], $owner, ["q" => "۰۹۱۱۱۱۱۰۰۰۳"]);

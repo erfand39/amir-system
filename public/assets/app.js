@@ -579,6 +579,7 @@ const adminSections = [
   ["services", "خدمات نصب"],
   ["articles", "مجله و راهنماها"],
   ["users", "کاربران و دسترسی"],
+  ["finance", "گزارش دریافت و بازپرداخت"],
   ["ledger_entries", "اسناد دریافت و برگشت"],
   ["audit_logs", "سوابق تغییرات"],
   ["health", "سلامت و آمادگی نصب"],
@@ -676,6 +677,12 @@ async function adminPage() {
       fail: "نیازمند رسیدگی",
     };
     content = `<section class="card padded"><h2>سلامت داده و تنظیمات استقرار</h2><p class="muted mt">موتور دیتابیس: ${esc(data.database)} — نسخهٔ ساختار: ${num(data.schema_version)}</p><div class="notice ${data.integrity_ok ? "" : "error"}">${data.integrity_ok ? "در بررسی‌های انجام‌شده ناسازگاری داده پیدا نشد." : "ناسازگاری داده پیدا شد؛ پیش از اصلاح، پشتیبان بگیرید و علت را بررسی کنید."}</div><div class="table-scroll"><table class="data"><thead><tr><th>بررسی</th><th>نتیجه</th><th>تعداد مغایرت</th></tr></thead><tbody>${rows.map((c) => `<tr><td class="wrap">${esc(c.label)}</td><td><span class="tag ${c.status === "pass" ? "good" : "orange"}">${labels[c.status] || esc(c.status)}</span></td><td>${c.count === undefined ? "—" : num(c.count)}</td></tr>`).join("")}</tbody></table></div><p class="mt">${num(data.pending_payment_reviews)} سفارش نیازمند بررسی پرداخت؛ ${num(data.unknown_payments)} درخواست پرداخت با نتیجهٔ نامشخص.</p><p class="small muted">${data.online_payment_configured ? "اطلاعات درگاه تنظیم شده است؛ انجام تراکنش واقعی هنوز باید تأیید شود." : "درگاه آنلاین تنظیم نشده است."}</p><div class="notice">${esc(data.notice)}</div><button class="btn secondary" data-action="refresh-health">بررسی دوباره</button></section>`;
+  } else if (adminKind === "finance") {
+    const query = new URLSearchParams();
+    for (const key of ["from", "to"]) if (params.get(key)) query.set(key, params.get(key));
+    const report = await api("admin/finance?" + query);
+    const rows = report.items.map((row) => `<tr><th scope="row">${esc(paymentLabels[row.method])}</th><td>${money(row.received)} · ${num(row.payment_count)} مورد</td><td>${money(row.refunded)} · ${num(row.refund_count)} مورد</td><td>${money(row.net)}</td></tr>`);
+    content = `<form id="finance-filter" class="card padded form-grid">${field("from", "از تاریخ میلادی", report.from, "date", true)}${field("to", "تا تاریخ میلادی", report.to, "date", true)}<div class="form-error" role="alert"></div><button class="btn">نمایش گزارش</button></form><div class="card padded mt"><div class="table-scroll"><table class="data"><thead><tr><th scope="col">روش پرداخت</th><th scope="col">دریافت</th><th scope="col">برگشت وجه</th><th scope="col">خالص دریافت</th></tr></thead><tbody>${rows.join("") || '<tr><td colspan="4">در این بازه دریافت یا بازپرداختی ثبت نشده است.</td></tr>'}</tbody></table></div>${rows.length ? '<button type="button" class="btn secondary small mt" data-action="finance-csv" data-from="' + report.from + '" data-to="' + report.to + '">دریافت CSV</button>' : ""}</div>`;
   } else if (adminKind === "settings") {
     const data = await api("admin/settings");
     content = `<form id="settings-form" class="card padded"><div class="form-grid">${field("name", "نام فروشگاه", data.name, "text", true)}${field("tagline", "معرفی کوتاه", data.tagline)}${field("phone", "تلفن پاسخ‌گویی", data.phone, "tel")}${field("email", "ایمیل پاسخ‌گویی", data.email, "email")}${field("address", "آدرس دقیق فروشگاه", data.address, "textarea", false, "wide")}${field("hours", "ساعت کاری", data.hours)}${field("currency_rate", "نرخ هر دلار (تومان)", data.currency_rate, "number", true)}${field("cod_reservation_hours", "مهلت رزرو پرداخت در محل (۱ تا ۱۶۸ ساعت)", data.cod_reservation_hours ?? 24, "number", true)}${field("shipping_fee", "هزینه ارسال عادی (تومان)", data.shipping_fee, "number", true)}${field("free_shipping_from", "ارسال رایگان از مبلغ (تومان)", data.free_shipping_from, "number", true)}${field("installation_free_from", "نصب رایگان از مبلغ (تومان)", data.installation_free_from, "number", true)}${field("latitude", "عرض جغرافیایی", data.latitude ?? "", "number")}${field("longitude", "طول جغرافیایی", data.longitude ?? "", "number")}${field("about", "درباره فروشگاه", data.about, "textarea", false, "wide")}${field("transfer_instructions", "راهنمای واریز بانکی برای خریدار", data.transfer_instructions || "", "textarea", false, "wide")}</div><label class="check"><input name="cod_enabled" type="checkbox" ${data.cod_enabled ? "checked" : ""}>پرداخت در محل فعال باشد</label><label class="check"><input name="transfer_enabled" type="checkbox" ${data.transfer_enabled ? "checked" : ""}>واریز بانکی با تأیید دستی فعال باشد</label><p class="small muted">نرخ دستی به‌صورت پایدار ذخیره می‌شود و فقط قیمت‌های دلاری را تغییر می‌دهد. اطلاعات محرمانه درگاه در تنظیمات سرور قرار می‌گیرد.</p><div class="form-error"></div><button class="btn">ذخیره تنظیمات</button></form>`;
@@ -825,7 +832,7 @@ async function adminPage() {
     .filter(
       ([key]) =>
         boot.user.role === "admin" ||
-        !["users", "settings", "coupons", "warranties", "services"].includes(
+        !["users", "settings", "coupons", "warranties", "services", "finance"].includes(
           key,
         ),
     )
@@ -1317,6 +1324,18 @@ document.addEventListener("click", async (e) => {
     else if (b.dataset.action === "close-dialog") $("#dialog").close();
     else if (b.dataset.action === "filters")
       $(".filter-disclosure").open = !$(".filter-disclosure").open;
+    else if (b.dataset.action === "finance-csv") {
+      const report = await api("admin/finance?" + new URLSearchParams({ from: b.dataset.from, to: b.dataset.to }));
+      const rows = report.items.map(({ method, received, refunded, net, payment_count, refund_count }) =>
+        [paymentLabels[method], received, refunded, net, payment_count, refund_count]);
+      const csv = ["روش پرداخت,دریافت (تومان),برگشت وجه (تومان),خالص دریافت (تومان),تعداد دریافت,تعداد بازپرداخت", ...rows.map((row) => row.join(","))].join("\r\n");
+      const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `amir-finance-${report.from}-${report.to}.csv`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
     else if (b.dataset.action === "print") window.print();
     else if (b.dataset.action === "refresh-health") await route();
     else if (b.dataset.action === "close-editor")
@@ -1355,6 +1374,8 @@ document.addEventListener("submit", (e) => {
   formTask(form, async () => {
     const data = formData(form);
     switch (form.matches("[data-payment-review]") ? "resolve-payment-form" : form.id) {
+      case "finance-filter":
+        return navigate("/admin?" + new URLSearchParams({ section: "finance", from: data.from, to: data.to }));
       case "site-search":
         return navigate("/category?q=" + encodeURIComponent(data.q));
       case "filter-form": {

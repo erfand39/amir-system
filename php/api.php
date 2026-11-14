@@ -472,6 +472,9 @@ final class API
             if ($method === "GET" && $route === "admin/health") {
                 return health_report($s);
             }
+            if ($method === "GET" && $route === "admin/finance") {
+                return $this->admin->finance($session, $q);
+            }
             if ($route === "admin/settings" && $method === "GET") {
                 $s->admin($session, true);
                 return $s->setting("store");
