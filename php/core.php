@@ -1152,6 +1152,8 @@ final class Shop
         $o["can_cancel"] = $o["can_cancel"] && !$o["transfer_receipt"];
         $o["can_recheck_online"] = $o["payment_method"] === "online" && $o["payment_status"] === "unpaid" &&
             (bool) $this->db->get("SELECT id FROM payments WHERE order_id=? AND status='pending' AND authority IS NOT NULL LIMIT 1", [$oid]);
+        $o["payment_uncertain"] = $o["payment_method"] === "online" && $o["payment_status"] === "unpaid" &&
+            (bool) $this->db->get("SELECT id FROM payments WHERE order_id=? AND status IN ('requesting','unknown') LIMIT 1", [$oid]);
         unset($o["quote_json"], $o["guest_session_id"]);
         if ($admin) {
             $o["next_statuses"] = $this->nextOrderStatuses($o);

@@ -187,7 +187,8 @@ check(rejects(502, fn() => $timeout->request($unknown["id"], $buyer)) &&
 $queue = $call("GET", "admin/orders", [], $owner, ["status" => "unknown_payments"]);
 $attempt = $shop->order($unknown["id"], $owner, true)["unresolved_payments"][0]["id"];
 check($queue["total"] === 1 && $queue["items"][0]["id"] === $unknown["id"] &&
-    empty($shop->order($unknown["id"], $buyer)["unresolved_payments"]), "Unknown attempt appears in the operational queue only");
+    $shop->order($unknown["id"], $buyer)["payment_uncertain"] &&
+    empty($shop->order($unknown["id"], $buyer)["unresolved_payments"]), "Customer sees the payment state without the admin review record");
 $resolution = ["attempt_id" => $attempt, "confirmed" => true, "authority" => "RECOVERED-AUTH-1234"];
 check(rejects(403, fn() => $call("POST", $route, $resolution, $manager)) &&
     rejects(409, fn() => $call("POST", $route, ["attempt_id" => $attempt, "confirmed" => true], $owner)), "Only the owner can review and active orders cannot be closed without an authority");

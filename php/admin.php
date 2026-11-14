@@ -131,6 +131,8 @@ final class Admin
                 }
                 if ($status === "transfer_review") {
                     $filters[] = "tr.order_id IS NOT NULL AND o.payment_status='unpaid' AND o.status IN ('pending_payment','confirmed','processing')";
+                } elseif ($status === "ready_to_pack") {
+                    $filters[] = "o.status IN ('confirmed','processing') AND (o.payment_status='paid' OR o.payment_method='cod') AND o.stock_released=0";
                 } elseif ($status === "unknown_payments") {
                     $filters[] = "o.payment_status='unpaid' AND EXISTS (SELECT 1 FROM payments p
                         WHERE p.order_id=o.id AND p.authority IS NULL

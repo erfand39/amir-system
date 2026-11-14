@@ -432,7 +432,7 @@ async function cartPage() {
           )
           .join(
             "",
-          )}</div>${!Object.values(boot.payment).some(Boolean) ? '<div class="notice error">هیچ روش پرداختی توسط فروشگاه فعال نشده است.</div>' : ""}<div class="notice">با ثبت سفارش، موجودی رزرو و شماره پیگیری ایجاد می‌شود. پرداخت آنلاین فقط پس از تأیید درگاه نهایی خواهد شد.</div><div class="form-error"></div><div class="button-row"><button class="btn" ${!Object.values(boot.payment).some(Boolean) ? "disabled" : ""}>ثبت سفارش و ادامه ${icon("arrow")}</button><a class="btn secondary" href="/cart">بازگشت به سبد</a></div></form>`
+          )}</div>${!Object.values(boot.payment).some(Boolean) ? '<div class="notice error">هیچ روش پرداختی توسط فروشگاه فعال نشده است.</div>' : ""}<div class="notice">با ثبت سفارش، موجودی رزرو و شماره پیگیری ایجاد می‌شود. پرداخت آنلاین فقط پس از تأیید درگاه نهایی خواهد شد.</div><div class="form-error" role="alert"></div><div class="button-row"><button class="btn" ${!Object.values(boot.payment).some(Boolean) ? "disabled" : ""}>${money(quote.total_amount)} · ثبت سفارش ${icon("arrow")}</button><a class="btn secondary" href="/cart">بازگشت به سبد</a></div></form>`
   }</section>${summary(quote, !delivery)}</div>`;
 }
 async function authPage(register = false, setup = false) {
@@ -440,10 +440,19 @@ async function authPage(register = false, setup = false) {
     return `<div class="empty"><h2>شما وارد حساب شده‌اید</h2><a class="btn" href="${["admin", "manager"].includes(boot.user.role) ? "/admin" : "/profile"}">ادامه به حساب</a></div>`;
   return `<section class="card form-card"><span class="eyebrow">${setup ? "راه‌اندازی امن فروشگاه" : "به امیر سیستم خوش آمدید"}</span><h1 class="mt">${setup ? "ساخت مدیر اصلی" : register ? "ایجاد حساب کاربری" : "ورود به حساب"}</h1><p>${setup ? "کلید نصب را از تنظیمات سرور وارد کنید. هیچ رمز پیش‌فرضی در برنامه وجود ندارد." : register ? "برای مشاهده سفارش‌ها و ثبت دیدگاه حساب بسازید." : "با شماره همراه و رمز عبور خود وارد شوید."}</p><form id="auth-form" data-mode="${setup ? "setup" : register ? "register" : "login"}">${setup ? field("setup_token", "کلید نصب", "", "password", true) : ""}${register || setup ? field("name", "نام و نام خانوادگی", "", "text", true) : ""}${field("phone", "شماره همراه", "", "tel", true)}${field("password", "رمز عبور", "", "password", true)}<div class="form-error"></div><button class="btn block">${setup ? "ساخت مدیر و ورود" : register ? "ثبت‌نام" : "ورود به حساب"}</button></form>${!setup ? `<p class="mt">${register ? "حساب دارید؟" : "حساب ندارید؟"} <a class="text-link" href="${register ? "/login" : "/register"}">${register ? "وارد شوید" : "ثبت‌نام کنید"}</a></p>` : ""}</section>`;
 }
+function orderTimeline(order) {
+  const steps = ["confirmed", "processing", "shipped", "delivered"];
+  const current = steps.indexOf(order.status);
+  if (current === -1 && order.status !== "pending_payment") return "";
+  const labels = ["ثبت سفارش", "آماده‌سازی", "ارسال", "تحویل"];
+  const times = [order.created_at, null, order.shipment?.shipped_at, order.shipment?.delivered_at];
+  return `<ol class="order-history mt" aria-label="مراحل سفارش">${labels.map((label, index) =>
+    `<li${index === Math.max(0, current) ? ' aria-current="step"' : ""}>${index <= Math.max(0, current) ? "✓ " : ""}${label}${times[index] ? " · " + esc(stamp(times[index], true)) : ""}</li>`).join("")}</ol>`;
+}
 function shipmentSummary(o) {
   const ship = o.shipment;
   if (!ship) return "";
-  return `<section class="notice shipment-summary"><h3>اطلاعات ارسال</h3><p>${esc(ship.carrier)} — کد رهگیری <bdi dir="ltr">${esc(ship.tracking_code)}</bdi></p>${ship.shipped_at || ship.delivered_at ? `<p class="small">${ship.shipped_at ? "ارسال " + stamp(ship.shipped_at, true) : ""}${ship.shipped_at && ship.delivered_at ? " · " : ""}${ship.delivered_at ? "تحویل " + stamp(ship.delivered_at, true) : ""}</p>` : ""}</section>`;
+  return `<section class="notice shipment-summary"><h3>اطلاعات ارسال</h3><p>${esc(ship.carrier)} — کد رهگیری <bdi dir="ltr">${esc(ship.tracking_code)}</bdi> <button type="button" class="btn secondary small no-print" data-copy-tracking="${esc(ship.tracking_code)}">کپی کد رهگیری</button></p>${ship.shipped_at || ship.delivered_at ? `<p class="small">${ship.shipped_at ? "ارسال " + stamp(ship.shipped_at, true) : ""}${ship.shipped_at && ship.delivered_at ? " · " : ""}${ship.delivered_at ? "تحویل " + stamp(ship.delivered_at, true) : ""}</p>` : ""}</section>`;
 }
 function customerOrderActions(o) {
   const transferOpen = o.payment_method === "transfer" && o.payment_status === "unpaid" &&
@@ -455,7 +464,7 @@ function customerOrderActions(o) {
 }
 async function orderPage(oid, invoice = false) {
   const o = await api("orders/" + encodeURIComponent(oid));
-  return `<section class="card padded receipt">${invoice ? `<div class="invoice-head"><div><span class="eyebrow">صورت‌حساب سفارش</span><h1>${esc(boot.store.name)}</h1></div><b>${esc(o.tracking_code)}</b></div>` : `<span class="eyebrow">سفارش شما ثبت شده است</span><h1 class="mt tracking-title">${esc(o.tracking_code)}</h1>`}<div class="row">${tag(o.status)}${tag(o.payment_status)}<span class="small muted">${stamp(o.created_at)}</span></div><div class="notice">${o.payment_status === "refunded" ? "برگشت وجه این سفارش ثبت شده است." : o.payment_status === "paid" ? "پرداخت این سفارش تأیید شده است." : ["cancelled", "expired"].includes(o.status) ? "رزرو این سفارش پایان یافته است." : o.payment_method === "online" ? "برای نهایی‌شدن پرداخت، از دکمه پرداخت آنلاین استفاده کنید." : "سفارش ثبت شده است و تأیید دریافت وجه در انتظار است."}</div><div class="form-grid small"><p><b>تحویل‌گیرنده:</b> ${esc(o.customer_name)}</p><p><b>شماره تماس:</b> ${esc(o.mobile)}</p><p class="wide"><b>آدرس:</b> ${esc(o.province)}، ${esc(o.city)}، ${esc(o.address)} — ${esc(o.postal_code)}</p></div><div class="table-scroll"><table class="data"><thead><tr><th>شرح کالا</th><th>تعداد</th><th>بهای واحد</th><th>جمع ردیف</th></tr></thead><tbody>${o.items.map((i) => `<tr><td class="wrap">${esc(i.title)}</td><td>${num(i.qty)}</td><td>${money(i.unit_price)}</td><td>${money(i.line_total)}</td></tr>`).join("")}</tbody></table></div><div class="mt">${[
+  return `<section class="card padded receipt">${invoice ? `<div class="invoice-head"><div><span class="eyebrow">صورت‌حساب سفارش</span><h1>${esc(boot.store.name)}</h1></div><b>${esc(o.tracking_code)}</b></div>` : `<span class="eyebrow">سفارش شما ثبت شده است</span><h1 class="mt tracking-title">${esc(o.tracking_code)}</h1>`}<div class="row">${tag(o.status)}${tag(o.payment_status)}<span class="small muted">آخرین تغییر ${stamp(o.updated_at, true)}</span></div><div class="notice">${o.payment_status === "refunded" ? "برگشت وجه این سفارش ثبت شده است." : o.payment_status === "paid" ? "پرداخت این سفارش تأیید شده است." : ["cancelled", "expired"].includes(o.status) ? "رزرو این سفارش پایان یافته است." : o.payment_uncertain ? "نتیجهٔ درخواست درگاه در حال بررسی است. برای پیگیری با فروشگاه تماس بگیرید." : o.payment_method === "online" ? "برای نهایی‌شدن پرداخت، از دکمه پرداخت آنلاین استفاده کنید." : "سفارش ثبت شده است و تأیید دریافت وجه در انتظار است."}</div><div class="form-grid small"><p><b>تحویل‌گیرنده:</b> ${esc(o.customer_name)}</p><p><b>شماره تماس:</b> ${esc(o.mobile)}</p><p class="wide"><b>آدرس:</b> ${esc(o.province)}، ${esc(o.city)}، ${esc(o.address)} — ${esc(o.postal_code)}</p></div><div class="table-scroll"><table class="data"><thead><tr><th>شرح کالا</th><th>تعداد</th><th>بهای واحد</th><th>جمع ردیف</th></tr></thead><tbody>${o.items.map((i) => `<tr><td class="wrap">${esc(i.title)}</td><td>${num(i.qty)}</td><td>${money(i.unit_price)}</td><td>${money(i.line_total)}</td></tr>`).join("")}</tbody></table></div><div class="mt">${[
     ["کالاها", o.subtotal],
     ["تخفیف", -o.coupon_amount],
     ["ارسال", o.shipping_amount],
@@ -468,7 +477,7 @@ async function orderPage(oid, invoice = false) {
     )
     .join(
       "",
-    )}</div>${shipmentSummary(o)}${!invoice ? `<div class="no-print">${customerOrderActions(o)}</div>` : ""}<div class="button-row mt no-print">${!invoice && o.payment_method === "online" && o.status === "pending_payment" && o.payment_status !== "paid" ? `<button class="btn" data-pay="${esc(o.id)}">پرداخت آنلاین ${icon("lock")}</button>` : ""}${!invoice && o.can_recheck_online ? `<button class="btn secondary" data-recheck-payment="${esc(o.id)}">استعلام از درگاه</button>` : ""}${invoice ? `<a class="btn secondary" href="/order/${encodeURIComponent(o.id)}">جزئیات سفارش</a>` : `<a class="btn secondary" href="/invoice/${encodeURIComponent(o.id)}">نمای صورت‌حساب</a>`}<button class="btn secondary" data-action="print">${icon("print")} چاپ</button><a class="text-link" href="/profile">حساب و سفارش‌ها</a></div></section>`;
+    )}</div>${!invoice ? orderTimeline(o) : ""}${shipmentSummary(o)}${!invoice ? `<div class="no-print">${customerOrderActions(o)}</div>` : ""}<div class="button-row mt no-print">${!invoice && o.payment_method === "online" && o.status === "pending_payment" && o.payment_status !== "paid" && !o.payment_uncertain ? `<button class="btn" data-pay="${esc(o.id)}">پرداخت آنلاین ${icon("lock")}</button>` : ""}${!invoice && o.can_recheck_online ? `<button class="btn secondary" data-recheck-payment="${esc(o.id)}">استعلام از درگاه</button>` : ""}${invoice ? `<a class="btn secondary" href="/order/${encodeURIComponent(o.id)}">جزئیات سفارش</a>` : `<a class="btn secondary" href="/invoice/${encodeURIComponent(o.id)}">نمای صورت‌حساب</a>`}<button class="btn secondary" data-action="print">${icon("print")} چاپ</button><a class="text-link" href="/profile">حساب و سفارش‌ها</a></div></section>`;
 }
 async function profilePage() {
   if (!boot.user) return authPage();
@@ -597,6 +606,7 @@ const adminFilterOptions = {
     ...["pending_payment", "confirmed", "processing", "shipped", "delivered", "cancelled", "expired", "payment_review", "refunded"].map((k) => [k, statuses[k]]),
     ["transfer_review", "رسید واریز در انتظار بررسی"],
     ["unknown_payments", "پرداخت آنلاین نامشخص"],
+    ["ready_to_pack", "صف آماده‌سازی"],
     ["return_expected", "مرجوعی در انتظار انبار"],
   ],
   users: [...Object.entries(userRoles), ["inactive", "حساب غیرفعال"]],
@@ -648,15 +658,15 @@ async function adminPage() {
       ["محصولات ثبت‌شده", num(data.products), "کاتالوگ فروشگاه"],
       ["سفارش‌ها", num(data.orders), "همه وضعیت‌ها"],
       ["دریافت تأییدشده", money(data.paid_amount), "بر مبنای پرداخت ثبت‌شده"],
-      ["موجودی کم", num(data.low_stock), "کالاهای فعال با کمتر از ۳ عدد"],
+      ["موجودی کم", num(data.low_stock), "کالاهای فعال با کمتر از ۳ عدد", "/admin?section=products&stock=low"],
     ]
       .map(
-        ([t, v, d]) =>
-          `<article class="card stat"><span class="label">${t}</span><div class="value">${v}</div><span class="hint">${d}</span></article>`,
+        ([t, v, d, url]) =>
+          `<article class="card stat"><span class="label">${url ? `<a class="text-link" href="${url}">${t}</a>` : t}</span><div class="value">${v}</div><span class="hint">${d}</span></article>`,
       )
       .join(
         "",
-      )}</div><section class="card notice-list"><h3>نیازمند رسیدگی</h3><p>${num(data.new_messages)} پیام تازه در پشتیبانی</p><p>${num(data.pending_reviews)} دیدگاه در انتظار بررسی</p><ul class="order-history"><li>${num(data.ready_to_pack)} سفارش در صف آماده‌سازی</li><li><a class="text-link" href="/admin?section=orders&status=transfer_review">${num(data.transfer_review)} رسید واریز در انتظار تأیید</a></li><li><a class="text-link" href="/admin?section=orders&status=unknown_payments">${num(data.unknown_payments)} پرداخت آنلاین نامشخص</a></li><li><a class="text-link" href="/admin?section=orders&status=payment_review">${num(data.payment_review)} دریافت دیرهنگام نیازمند رسیدگی</a></li><li><a class="text-link" href="/admin?section=orders&status=return_expected">${num(data.returns_expected)} مرجوعی در انتظار دریافت انبار</a></li></ul><div class="button-row"><a class="btn secondary small" href="/admin?section=orders">مدیریت سفارش‌ها</a><a class="btn secondary small" href="/admin?section=stock_movements">بررسی انبار</a></div></section><section class="card notice-list"><h3>کنترل‌های فروشگاه</h3><p>مبلغ سفارش در سرور محاسبه می‌شود. موجودی و سندهای مالی با عملیات مربوط به خود ثبت می‌شوند. برای قیمت، گارانتی و مشخصات کالا اطلاعات تأییدشده وارد کنید.</p></section>`;
+      )}</div><section class="card notice-list"><h3>نیازمند رسیدگی</h3><p>${num(data.new_messages)} پیام تازه در پشتیبانی</p><p>${num(data.pending_reviews)} دیدگاه در انتظار بررسی</p><ul class="order-history"><li><a class="text-link" href="/admin?section=orders&status=ready_to_pack">${num(data.ready_to_pack)} سفارش در صف آماده‌سازی</a></li><li><a class="text-link" href="/admin?section=orders&status=transfer_review">${num(data.transfer_review)} رسید واریز در انتظار تأیید</a></li><li><a class="text-link" href="/admin?section=orders&status=unknown_payments">${num(data.unknown_payments)} پرداخت آنلاین نامشخص</a></li><li><a class="text-link" href="/admin?section=orders&status=payment_review">${num(data.payment_review)} دریافت دیرهنگام نیازمند رسیدگی</a></li><li><a class="text-link" href="/admin?section=orders&status=return_expected">${num(data.returns_expected)} مرجوعی در انتظار دریافت انبار</a></li></ul><div class="button-row"><a class="btn secondary small" href="/admin?section=orders">مدیریت سفارش‌ها</a><a class="btn secondary small" href="/admin?section=stock_movements">بررسی انبار</a></div></section><section class="card notice-list"><h3>کنترل‌های فروشگاه</h3><p>مبلغ سفارش در سرور محاسبه می‌شود. موجودی و سندهای مالی با عملیات مربوط به خود ثبت می‌شوند. برای قیمت، گارانتی و مشخصات کالا اطلاعات تأییدشده وارد کنید.</p></section>`;
   } else if (adminKind === "health") {
     const data = await api("admin/health");
     const rows = [...data.checks, ...data.deployment_checks];
@@ -1168,7 +1178,10 @@ document.addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b || b.disabled) return;
   try {
-    if (b.dataset.compare) {
+    if (b.dataset.copyTracking) {
+      await navigator.clipboard.writeText(b.dataset.copyTracking);
+      toast("کد رهگیری کپی شد.");
+    } else if (b.dataset.compare) {
       e.preventDefault();
       const id = b.dataset.compare;
       if (compare.includes(id)) compare = compare.filter((x) => x !== id);
