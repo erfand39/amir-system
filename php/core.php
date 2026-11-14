@@ -190,6 +190,7 @@ function read_config(): array
         "setup_token" => getenv("SETUP_TOKEN") ?: "",
         "session_hours" => (int) (getenv("SESSION_HOURS") ?: 24),
         "idle_minutes" => (int) (getenv("SESSION_IDLE_MINUTES") ?: 60),
+        "maintenance_cron" => getenv("AMIR_MAINTENANCE_CRON") === "true",
         "secure" =>
             getenv("COOKIE_SECURE") === "true" ||
             getenv("NODE_ENV") === "production",
@@ -1598,6 +1599,30 @@ final class Shop
                 }
             });
         }
+    }
+    public function pruneExpiredState(): array
+    {
+        $now = dt();
+        $idle = later(-$this->cfg["idle_minutes"] * 60);
+        $removed = [];
+        foreach ([
+            "sessions" => ["expires_at<? OR last_seen<?", [$now, $idle]],
+            "rate_limits" => ["window_end<?", [$now]],
+        ] as $table => [$condition, $args]) {
+            $ids = array_column($this->db->all(
+                "SELECT id FROM $table WHERE $condition ORDER BY id LIMIT 500",
+                $args,
+            ), "id");
+            $removed[$table] = 0;
+            if ($ids) {
+                $slots = implode(",", array_fill(0, count($ids), "?"));
+                $removed[$table] = $this->db->run(
+                    "DELETE FROM $table WHERE id IN ($slots) AND ($condition)",
+                    array_merge($ids, $args),
+                );
+            }
+        }
+        return $removed;
     }
     public function ledger(
         string $oid,

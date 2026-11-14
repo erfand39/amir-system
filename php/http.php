@@ -30,7 +30,9 @@ function run_http(): void
         $shop = new Shop($db, $cfg);
         $shop->init();
         $shop->rate("http-ip:" . ($_SERVER["REMOTE_ADDR"] ?? "unknown"), 600, 1);
-        $shop->expire();
+        if (!$cfg["maintenance_cron"]) {
+            $shop->expire();
+        }
         $api = new API($shop);
         $path = parse_url($_SERVER["REQUEST_URI"] ?? "/", PHP_URL_PATH) ?: "/";
         $method = $_SERVER["REQUEST_METHOD"] ?? "GET";

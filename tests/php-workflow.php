@@ -206,5 +206,14 @@ check($shop->session($outsider["token"]) === null, "Revoked session cannot be re
 $call("PUT", "admin/users/" . $manager["user"]["id"], ["active" => false], $owner);
 check($shop->session($manager["token"]) === null, "Disabled manager loses the session");
 check(rejects(400, fn() => $call("PUT", "admin/users/" . $owner["user"]["id"], ["active" => false], $owner)), "Last active owner is protected");
+$stale = $shop->newSession();
+$db->run("UPDATE sessions SET last_seen=? WHERE id=?", [later(-7200), $stale["id"]]);
+$db->run("INSERT INTO rate_limits(id,hits,window_end) VALUES(?,?,?)", ["stale-fixture", 1, later(-60)]);
+$db->run("INSERT INTO rate_limits(id,hits,window_end) VALUES(?,?,?)", ["active-fixture", 1, later(60)]);
+$cleaned = $shop->pruneExpiredState();
+check($cleaned["sessions"] >= 1 && $cleaned["rate_limits"] >= 1 &&
+    !$db->get("SELECT id FROM sessions WHERE id=?", [$stale["id"]]) &&
+    $db->get("SELECT id FROM rate_limits WHERE id='active-fixture'") &&
+    $shop->session($owner["token"]), "Maintenance prunes old state and preserves active sessions and counters");
 check(health_report($shop)["integrity_ok"], "Inventory, payments, shipments and journals reconcile at the end");
 echo "Workflow checks passed: $checks\n";
