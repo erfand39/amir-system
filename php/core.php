@@ -390,7 +390,7 @@ final class Shop
             $exists = null;
         }
         if ($exists) {
-            need((int)decode_json($exists['value']) === 3, 'نسخه دیتابیس با برنامه سازگار نیست.', 503);
+            need((int)decode_json($exists['value']) === 4, 'نسخه دیتابیس با برنامه سازگار نیست.', 503);
             return;
         }
         need($bootstrap, 'نصب دیتابیس کامل نشده است؛ فایل کاتالوگ اولیه را وارد کنید.', 503);
@@ -493,8 +493,8 @@ final class Shop
                 "transfer_enabled" => false,
                 "currency_rate" => 188000,
             ]);
-            $this->settingSave("database_pack_version", "1.1.0");
-            $this->settingSave("schema_version", 3);
+            $this->settingSave("database_pack_version", "1.2.0");
+            $this->settingSave("schema_version", 4);
             $articles = [
                 [
                     "راهنمای انتخاب سیستم صوتی خودرو",
@@ -720,7 +720,10 @@ final class Shop
     public function product(string $key, bool $admin = false): array
     {
         $p = $this->db->get(
-            "SELECT p.*,c.title category_name,b.title brand_name,(SELECT AVG(rating) FROM reviews WHERE product_id=p.id AND status='approved') rating,(SELECT COUNT(*) FROM reviews WHERE product_id=p.id AND status='approved') reviews_count FROM products p JOIN categories c ON c.id=p.category_id JOIN brands b ON b.id=p.brand_id WHERE (p.id=? OR p.slug=?) " .
+            "SELECT p.*,c.title category_name,b.title brand_name,(SELECT AVG(rating) FROM reviews WHERE product_id=p.id AND status='approved') rating,(SELECT COUNT(*) FROM reviews WHERE product_id=p.id AND status='approved') reviews_count" .
+                ($admin ? ",m.sku,m.shelf,COALESCE(m.reorder_level,3) reorder_level" : "") .
+                " FROM products p JOIN categories c ON c.id=p.category_id JOIN brands b ON b.id=p.brand_id " .
+                ($admin ? "LEFT JOIN product_inventory m ON m.product_id=p.id " : "") . "WHERE (p.id=? OR p.slug=?) " .
                 ($admin ? "" : "AND p.active=1"),
             [$key, $key],
         );
@@ -737,8 +740,10 @@ final class Shop
     public function products(array $q = [], bool $admin = false): array
     {
         $rows = $this->db->all(
-            "SELECT p.*,c.title category_name,b.title brand_name,(SELECT AVG(rating) FROM reviews WHERE product_id=p.id AND status='approved') rating,(SELECT COUNT(*) FROM reviews WHERE product_id=p.id AND status='approved') reviews_count FROM products p JOIN categories c ON c.id=p.category_id JOIN brands b ON b.id=p.brand_id " .
-                ($admin ? "" : "WHERE p.active=1"),
+            "SELECT p.*,c.title category_name,b.title brand_name,(SELECT AVG(rating) FROM reviews WHERE product_id=p.id AND status='approved') rating,(SELECT COUNT(*) FROM reviews WHERE product_id=p.id AND status='approved') reviews_count" .
+                ($admin ? ",m.sku,m.shelf,COALESCE(m.reorder_level,3) reorder_level" : "") .
+                " FROM products p JOIN categories c ON c.id=p.category_id JOIN brands b ON b.id=p.brand_id " .
+                ($admin ? "LEFT JOIN product_inventory m ON m.product_id=p.id" : "WHERE p.active=1"),
         );
         $rows = array_map([$this, "publicProduct"], $rows);
         $norm = fn($s) => strtolower(
@@ -784,7 +789,7 @@ final class Shop
                 $matchStock = match ($stockFilter) {
                     "in" => $p["stock"] > 0,
                     "out" => $p["stock"] === 0,
-                    "low" => $p["active"] && $p["stock"] < 3,
+                    "low" => $p["active"] && $p["stock"] < (int) $p["reorder_level"],
                     default => true,
                 };
                 if (!$matchStock) {
@@ -798,7 +803,8 @@ final class Shop
                                 " " .
                                 $p["description"] .
                                 " " .
-                                $p["brand_name"],
+                                $p["brand_name"] . " " .
+                                ($p["sku"] ?? "") . " " . ($p["shelf"] ?? ""),
                         ),
                         $norm($search),
                     )

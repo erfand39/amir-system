@@ -25,7 +25,8 @@ final class Admin
                     AND (p.status='unknown' OR (p.status='requesting' AND p.updated_at<=?)))",
                 "returns_expected" => "SELECT COUNT(*) n FROM orders WHERE status='refunded' AND stock_released=0",
                 "low_stock" =>
-                    "SELECT COUNT(*) n FROM products WHERE active=1 AND stock<3",
+                    "SELECT COUNT(*) n FROM products p LEFT JOIN product_inventory m ON m.product_id=p.id
+                     WHERE p.active=1 AND p.stock<COALESCE(m.reorder_level,3)",
                 "paid_amount" =>
                     "SELECT COALESCE(SUM(total_amount),0) n FROM orders WHERE payment_status='paid'",
                 "new_messages" =>
@@ -420,6 +421,7 @@ final class Admin
                         );
                     }
                 }
+                $this->saveInventoryMetadata($id, $d);
                 if (isset($d["vehicle_fits"])) {
                     need(
                         is_array($d["vehicle_fits"]) &&
@@ -784,6 +786,28 @@ final class Admin
             ]);
             return ["stock" => $balance];
         });
+    }
+    private function saveInventoryMetadata(string $product, array $data): void
+    {
+        if (!array_intersect_key($data, array_flip(["sku", "shelf", "reorder_level"]))) {
+            return;
+        }
+        $old = $this->db->get("SELECT * FROM product_inventory WHERE product_id=?", [$product]);
+        $sku = strtoupper(en(txt($data["sku"] ?? $old["sku"] ?? "", 0, 64)));
+        need($sku === "" || preg_match('/^[A-Z0-9][A-Z0-9._-]*$/D', $sku),
+            "کد کالا باید با حرف انگلیسی یا عدد شروع شود و فقط از حروف، عدد، نقطه، خط تیره و زیرخط تشکیل شود.");
+        $shelf = txt($data["shelf"] ?? $old["shelf"] ?? "", 0, 120);
+        $level = integer_value($data["reorder_level"] ?? $old["reorder_level"] ?? 3, 0, 1000000);
+        if ($sku !== "") {
+            need(!$this->db->get("SELECT product_id FROM product_inventory WHERE sku=? AND product_id<>?", [$sku, $product]),
+                "کد کالا قبلاً ثبت شده است.", 409);
+        }
+        $values = [$sku === "" ? null : $sku, $shelf, $level, $product];
+        if ($old) {
+            $this->db->run("UPDATE product_inventory SET sku=?,shelf=?,reorder_level=? WHERE product_id=?", $values);
+        } else {
+            $this->db->run("INSERT INTO product_inventory(sku,shelf,reorder_level,product_id) VALUES(?,?,?,?)", $values);
+        }
     }
     public function settings(array $d, array $s): array
     {

@@ -1,4 +1,4 @@
--- Amir System cPanel database pack 1.1.0; fresh install only.
+-- Amir System cPanel database pack 1.2.0; fresh install only.
 -- MySQL 8.0.21+ or MariaDB 10.6+. No CREATE DATABASE / USE / GRANT.
 SET NAMES utf8mb4;
 SET SESSION time_zone = '+00:00';
@@ -413,4 +413,13 @@ CREATE TABLE IF NOT EXISTS stock_receipt_details (
   event_key VARCHAR(190) COLLATE utf8mb4_bin PRIMARY KEY,
   notes VARCHAR(500) NOT NULL,
   FOREIGN KEY(event_key) REFERENCES stock_movements(event_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS product_inventory (
+  product_id VARCHAR(64) PRIMARY KEY,
+  sku VARCHAR(64) UNIQUE,
+  shelf VARCHAR(120) NOT NULL DEFAULT '',
+  reorder_level INTEGER NOT NULL DEFAULT 3,
+  FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
+  CHECK(reorder_level BETWEEN 0 AND 1000000)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

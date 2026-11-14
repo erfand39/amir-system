@@ -414,3 +414,12 @@ CREATE TABLE IF NOT EXISTS stock_receipt_details (
   notes VARCHAR(500) NOT NULL,
   FOREIGN KEY(event_key) REFERENCES stock_movements(event_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS product_inventory (
+  product_id VARCHAR(64) PRIMARY KEY,
+  sku VARCHAR(64) UNIQUE,
+  shelf VARCHAR(120) NOT NULL DEFAULT '',
+  reorder_level INTEGER NOT NULL DEFAULT 3,
+  FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
+  CHECK(reorder_level BETWEEN 0 AND 1000000)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

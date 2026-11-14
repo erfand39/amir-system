@@ -659,7 +659,7 @@ async function adminPage() {
       ["محصولات ثبت‌شده", num(data.products), "کاتالوگ فروشگاه"],
       ["سفارش‌ها", num(data.orders), "همه وضعیت‌ها"],
       ["دریافت تأییدشده", money(data.paid_amount), "بر مبنای پرداخت ثبت‌شده"],
-      ["موجودی کم", num(data.low_stock), "کالاهای فعال با کمتر از ۳ عدد", "/admin?section=products&stock=low"],
+      ["موجودی کم", num(data.low_stock), "کالاهای فعال زیر آستانهٔ انبار", "/admin?section=products&stock=low"],
     ]
       .map(
         ([t, v, d, url]) =>
@@ -719,9 +719,9 @@ async function adminPage() {
         let cells = [];
         if (adminKind === "products")
           cells = [
-            `<strong>${esc(r.title)}</strong>`,
+            `<strong>${esc(r.title)}</strong>${r.sku || r.shelf ? `<small class="muted cell-note">${esc(r.sku || "—")} · ${esc(r.shelf || "—")}</small>` : ""}`,
             money(r.price),
-            num(r.stock),
+            `${num(r.stock)}<small class="muted cell-note">آستانه ${num(r.reorder_level)}</small>`,
             num(r.reserved),
             tag(r.active ? "active" : "archived"),
             actionButton("edit", r.id, "ویرایش") + actionButton("stock", r.id, "رسید انبار"),
@@ -869,7 +869,7 @@ async function adminEditor(row = null) {
         ["usd", "قیمت دلاری"],
       ],
       row?.pricing_mode || "fixed",
-    )}${field("price_usd", "قیمت دلاری", row?.price_usd || 0, "number")}${field("discount_usd", "کاهش قیمت دلاری", row?.discount_usd || 0, "number")}${!row ? field("stock", "موجودی اولیه", 0, "number") : ""}${field("warranty_months", "مدت گارانتی ثبت‌شده (ماه)", row?.warranty_months || "", "number")}${field("description", "معرفی و توضیحات", row?.description || "", "textarea", false, "wide")}${field("images_text", "آدرس تصاویر، هر تصویر در یک سطر", (row?.images || []).join("\n"), "textarea", false, "wide")}${field(
+    )}${field("price_usd", "قیمت دلاری", row?.price_usd || 0, "number")}${field("discount_usd", "کاهش قیمت دلاری", row?.discount_usd || 0, "number")}${!row ? field("stock", "موجودی اولیه", 0, "number") : ""}${field("sku", "کد یکتای کالا (SKU)", row?.sku || "")}${field("shelf", "محل قفسه", row?.shelf || "")}${field("reorder_level", "آستانهٔ موجودی کم", row?.reorder_level ?? 3, "number", true)}${field("warranty_months", "مدت گارانتی ثبت‌شده (ماه)", row?.warranty_months || "", "number")}${field("description", "معرفی و توضیحات", row?.description || "", "textarea", false, "wide")}${field("images_text", "آدرس تصاویر، هر تصویر در یک سطر", (row?.images || []).join("\n"), "textarea", false, "wide")}${field(
       "specs_text",
       "مشخصات، هر سطر به شکل «عنوان: مقدار»",
       Object.entries(row?.specs || {})

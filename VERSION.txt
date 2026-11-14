@@ -1,5 +1,5 @@
 Amir System
 Version 2.5.0
 PHP and MySQL / MariaDB
-Database pack 1.1.0, schema 3
-See INSTALL-INFINITYFREE.fa.md for fresh installations and upgrades.
+Database pack 1.2.0, schema 4
+See INSTALL-CPANEL.fa.md for fresh installations and upgrades.

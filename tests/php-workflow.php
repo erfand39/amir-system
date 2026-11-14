@@ -144,6 +144,13 @@ $cancel = $shop->createOrder($d, $buyer, "test-workflow-cancel-001");
 $filtered = $call("GET", "admin/products", [], $manager, ["q" => $shop->product($pid)["title"]]);
 $filteredProduct = array_values(array_filter($filtered["items"], fn($row) => $row["id"] === $pid))[0];
 check($filteredProduct["reserved"] === 2 && $filteredProduct["stock"] === $base - 2, "Admin separates sellable and reserved quantities");
+$editable = $shop->product($pid, true);
+$metadata = $call("PUT", "admin/products/" . $pid, [
+    "version" => $editable["version"], "sku" => "shop-۰۰۱", "shelf" => "Shelf A", "reorder_level" => $base + 1,
+], $manager);
+$low = $call("GET", "admin/products", [], $manager, ["q" => "SHOP-001", "stock" => "low"]);
+check($metadata["sku"] === "SHOP-001" && $low["items"][0]["id"] === $pid &&
+    !isset($shop->product($pid)["shelf"]), "Inventory metadata is searchable and stays private");
 $shop->cancelByCustomer($cancel["id"], $buyer);
 $shop->cancelByCustomer($cancel["id"], $buyer);
 check($available() === $base, "Customer cancellation releases only once");
