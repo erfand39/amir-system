@@ -100,9 +100,20 @@ $call("POST", $route . "/return", ["confirmed" => true], $manager);
 check($available() === $base, "Physical return after refund restocks exactly once");
 
 $d["payment_method"] = "cod";
+$call("PUT", "admin/settings", ["cod_reservation_hours" => 8], $owner);
+$expiring = $shop->createOrder($d, $buyer, "workflow-cod-expiration-01");
+$expiringPath = "admin/orders/" . $expiring["id"];
+check(abs(strtotime($expiring["expires_at"] . " UTC") - time() - 28800) < 5, "New cash order uses the configured reservation");
+$db->run("UPDATE orders SET expires_at=? WHERE id=?", [later(-1), $expiring["id"]]);
+check(rejects(409, fn() => $call("POST", $expiringPath . "/status", ["status" => "processing"], $manager)) &&
+    rejects(409, fn() => $call("POST", $expiringPath . "/record-payment", ["reference" => "COD-EXPIRED-001"], $owner)), "Expired reservation cannot be packed or paid before the next cron run");
+$shop->expire();
+$shop->expire();
+check($shop->order($expiring["id"], $buyer)["status"] === "expired" && $available() === $base, "Cash reservation expiry releases stock exactly once");
 $cod = $shop->createOrder($d, $buyer, "test-workflow-cod-000001");
 $codPath = "admin/orders/" . $cod["id"];
 $call("POST", $codPath . "/status", ["status" => "processing"], $manager);
+check($shop->order($cod["id"], $buyer)["expires_at"] === null, "Packing clears the cash reservation deadline");
 $call("POST", $codPath . "/status", array_merge($shipping, ["tracking_code" => "POST-99102"]), $manager);
 check(rejects(409, fn() => $call("POST", $codPath . "/status", ["status" => "delivered"], $manager)), "Cash on delivery requires collection before delivery");
 $call("POST", $codPath . "/record-payment", ["reference" => "COD-RECEIPT-002"], $owner);

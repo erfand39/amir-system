@@ -774,6 +774,9 @@ final class Admin
                     $out[$k] = (bool) $d[$k];
                 }
             }
+            if (isset($d["cod_reservation_hours"])) {
+                $out["cod_reservation_hours"] = integer_value($d["cod_reservation_hours"], 1, 168);
+            }
             if (isset($d["transfer_instructions"])) {
                 $out["transfer_instructions"] = txt($d["transfer_instructions"], 0, 1000);
             }

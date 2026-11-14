@@ -1304,7 +1304,11 @@ final class Shop
                         encode_json($q),
                         dt(),
                         dt(),
-                        match ($method) { "online" => later(1800), "transfer" => later(86400), default => null },
+                        match ($method) {
+                            "online" => later(1800),
+                            "transfer" => later(86400),
+                            "cod" => later((int) ($settings["cod_reservation_hours"] ?? 24) * 3600),
+                        },
                     ],
                 );
                 foreach ($q["expanded_items"] as $i => $line) {
@@ -1409,7 +1413,8 @@ final class Shop
         $canFulfill = !$o["stock_released"] &&
             ($o["payment_status"] === "paid" || ($unpaid && $o["payment_method"] === "cod"));
         $next = match ($o["status"]) {
-            "confirmed" => $canFulfill ? ["processing"] : [],
+            "confirmed" => $canFulfill && ($o["payment_method"] !== "cod" || !$unpaid ||
+                $o["expires_at"] === null || $o["expires_at"] > dt()) ? ["processing"] : [],
             "processing" => $canFulfill ? ["shipped"] : [],
             "shipped" => $o["payment_status"] === "paid" ? ["delivered"] : [],
             default => [],
@@ -1456,6 +1461,9 @@ final class Shop
             }
             if ($next === "delivered") {
                 $this->db->run("UPDATE order_shipments SET delivered_at=? WHERE order_id=?", [$now, $oid]);
+            }
+            if ($next === "processing" && $o["payment_method"] === "cod") {
+                $this->db->run("UPDATE orders SET expires_at=NULL WHERE id=?", [$oid]);
             }
             $this->db->run("UPDATE orders SET status=?,updated_at=? WHERE id=?", [$next, $now, $oid]);
             $this->audit($actor, "order.status", $oid, ["from" => $o["status"], "to" => $next]);
@@ -1638,6 +1646,8 @@ final class Shop
                 return $this->order($oid, $s, true);
             }
             need($o["payment_status"] === "unpaid", "سفارش قابل دریافت مجدد نیست.", 409);
+            need($o["payment_method"] !== "cod" || $o["expires_at"] === null || $o["expires_at"] > dt(),
+                "مهلت رزرو این سفارش پرداخت در محل پایان یافته است.", 409);
             if (!$o["stock_released"] && $o["expires_at"] !== null && $o["expires_at"] <= dt()) {
                 $this->cancelLockedOrder($o, "expired", null);
                 $o["stock_released"] = 1;
