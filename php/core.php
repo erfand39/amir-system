@@ -298,8 +298,9 @@ final class DB
                 } elseif ($this->pdo->inTransaction()) {
                     $this->pdo->rollBack();
                 }
+                // InnoDB can reject a locking read if another transaction changed its snapshot row.
                 $retryable = $this->driver === "mysql" && $e instanceof PDOException &&
-                    in_array((int) ($e->errorInfo[1] ?? 0), [1205, 1213], true);
+                    in_array((int) ($e->errorInfo[1] ?? 0), [1020, 1205, 1213], true);
                 if (!$retryable || $attempt === 3) {
                     throw $e;
                 }
