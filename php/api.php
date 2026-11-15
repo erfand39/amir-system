@@ -489,6 +489,7 @@ final class API
                 return match ($parts[3]) {
                     "address" => $s->updateOrderAddress($key, $b, $session),
                     "shipment" => $s->updateShipment($key, $b, $session),
+                    "shipment-exception" => $s->updateShipmentException($key, $b, $session),
                     default => throw new HttpError("مسیر درخواست پیدا نشد.", 404),
                 };
             }

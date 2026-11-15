@@ -1641,3 +1641,14 @@
     background: var(--surface);
   }
 }
+
+@media print {
+  body.printing-order-slip > :not(#order-print-slip) {
+    display: none !important;
+  }
+
+  #order-print-slip {
+    display: block !important;
+    padding: 12mm;
+  }
+}

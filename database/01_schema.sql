@@ -1,4 +1,4 @@
--- Amir System cPanel database pack 1.3.0; fresh install only.
+-- Amir System cPanel database pack 1.4.0; fresh install only.
 -- MySQL 8.0.21+ or MariaDB 10.6+. No CREATE DATABASE / USE / GRANT.
 SET NAMES utf8mb4;
 SET SESSION time_zone = '+00:00';
@@ -438,4 +438,13 @@ CREATE TABLE IF NOT EXISTS order_item_returns (
   CHECK(quantity>0),
   CHECK((item_condition IS NULL AND received_at IS NULL) OR
         (item_condition IS NOT NULL AND received_at IS NOT NULL AND item_condition IN ('sellable','damaged')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shipment_exceptions (
+  order_id VARCHAR(64) PRIMARY KEY,
+  state VARCHAR(24) NOT NULL,
+  notes VARCHAR(500) NOT NULL,
+  updated_at DATETIME NOT NULL,
+  FOREIGN KEY(order_id) REFERENCES order_shipments(order_id),
+  CHECK(state IN ('failed','returned','resumed'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

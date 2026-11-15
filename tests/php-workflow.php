@@ -117,9 +117,19 @@ check($shop->order($cod["id"], $buyer)["expires_at"] === null, "Packing clears t
 $call("POST", $codPath . "/status", array_merge($shipping, ["tracking_code" => "POST-99102"]), $manager);
 check(rejects(409, fn() => $call("POST", $codPath . "/status", ["status" => "delivered"], $manager)), "Cash on delivery requires collection before delivery");
 $call("POST", $codPath . "/record-payment", ["reference" => "COD-RECEIPT-002"], $owner);
+$exception = $call("PUT", $codPath . "/shipment-exception", ["state" => "failed", "notes" => "Internal delivery fixture"], $manager);
+check($exception["shipment_exception"]["state"] === "failed" &&
+    !isset($shop->order($cod["id"], $buyer)["shipment_exception"]["notes"]) &&
+    !in_array("delivered", $exception["next_statuses"], true) &&
+    rejects(409, fn() => $call("POST", $codPath . "/status", ["status" => "delivered"], $manager)),
+    "Open shipping exceptions block delivery and preserve internal notes");
+$queue = $call("GET", "admin/orders", [], $owner, ["status" => "shipping_exceptions"]);
+check($queue["total"] === 1 && $queue["items"][0]["id"] === $cod["id"], "Delivery exceptions appear in the admin queue");
+$call("PUT", $codPath . "/shipment-exception", ["state" => "resumed", "notes" => "Sent again for delivery"], $manager);
 $call("POST", $codPath . "/status", ["status" => "delivered"], $manager);
 check($shop->order($cod["id"], $buyer)["status"] === "delivered", "Collected cash order can be delivered");
 $shipment = $shop->order($cod["id"], $buyer)["shipment"];
+$db->run("DELETE FROM shipment_exceptions WHERE order_id=?", [$cod["id"]]);
 $db->run("DELETE FROM order_shipments WHERE order_id=?", [$cod["id"]]);
 $db->run("UPDATE orders SET status='shipped' WHERE id=?", [$cod["id"]]);
 check(rejects(409, fn() => $call("POST", $codPath . "/status", ["status" => "delivered"], $manager)) &&

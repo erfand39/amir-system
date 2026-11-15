@@ -390,7 +390,7 @@ final class Shop
             $exists = null;
         }
         if ($exists) {
-            need((int)decode_json($exists['value']) === 5, 'نسخه دیتابیس با برنامه سازگار نیست.', 503);
+            need((int)decode_json($exists['value']) === 6, 'نسخه دیتابیس با برنامه سازگار نیست.', 503);
             return;
         }
         need($bootstrap, 'نصب دیتابیس کامل نشده است؛ فایل کاتالوگ اولیه را وارد کنید.', 503);
@@ -493,8 +493,8 @@ final class Shop
                 "transfer_enabled" => false,
                 "currency_rate" => 188000,
             ]);
-            $this->settingSave("database_pack_version", "1.3.0");
-            $this->settingSave("schema_version", 5);
+            $this->settingSave("database_pack_version", "1.4.0");
+            $this->settingSave("schema_version", 6);
             $articles = [
                 [
                     "راهنمای انتخاب سیستم صوتی خودرو",
@@ -1149,11 +1149,18 @@ final class Shop
         $o["can_cancel"] = $o["payment_status"] === "unpaid" &&
             in_array($o["status"], ["pending_payment", "confirmed"], true);
         $o["items"] = $this->db->all(
-            "SELECT * FROM order_items WHERE order_id=? ORDER BY LENGTH(id),id",
+            "SELECT i.*" . ($admin ? ",m.sku,m.shelf" : "") .
+                " FROM order_items i " .
+                ($admin ? "LEFT JOIN product_inventory m ON m.product_id=i.product_id " : "") .
+                "WHERE i.order_id=? ORDER BY LENGTH(i.id),i.id",
             [$oid],
         );
         $o["quote"] = decode_json($o["quote_json"]);
         $o["shipment"] = $this->db->get("SELECT * FROM order_shipments WHERE order_id=?", [$oid]);
+        $o["shipment_exception"] = $o["shipment"] ? $this->db->get(
+            "SELECT state,updated_at" . ($admin ? ",notes" : "") . " FROM shipment_exceptions WHERE order_id=?",
+            [$oid],
+        ) : null;
         $o["transfer_receipt"] = $this->db->get("SELECT reference,submitted_at FROM order_transfer_receipts WHERE order_id=?", [$oid]);
         $o["can_cancel"] = $o["can_cancel"] && !$o["transfer_receipt"];
         $o["can_recheck_online"] = $o["payment_method"] === "online" && $o["payment_status"] === "unpaid" &&
@@ -1169,6 +1176,9 @@ final class Shop
                 [$oid],
             );
             $o["next_statuses"] = $this->nextOrderStatuses($o);
+            if (in_array($o["shipment_exception"]["state"] ?? "", ["failed", "returned"], true)) {
+                $o["next_statuses"] = array_values(array_diff($o["next_statuses"], ["delivered"]));
+            }
             $o["unresolved_payments"] = $o["payment_method"] === "online" && $o["payment_status"] === "unpaid"
                 ? $this->db->all(
                     "SELECT id,status,updated_at FROM payments WHERE order_id=? AND authority IS NULL
@@ -1477,6 +1487,8 @@ final class Shop
             if ($next === "delivered") {
                 need($this->db->get("SELECT order_id FROM order_shipments WHERE order_id=?", [$oid]),
                     "پیش از ثبت تحویل، اطلاعات رهگیری ارسال را تکمیل کنید.", 409);
+                need(!$this->db->get("SELECT order_id FROM shipment_exceptions WHERE order_id=? AND state IN ('failed','returned')", [$oid]),
+                    "پیش از ثبت تحویل، ارسال مجدد مرسوله را ثبت کنید.", 409);
                 $this->db->run("UPDATE order_shipments SET delivered_at=? WHERE order_id=?", [$now, $oid]);
             }
             if ($next === "processing" && $o["payment_method"] === "cod") {
@@ -1493,6 +1505,36 @@ final class Shop
         $tracking = en(txt($d["tracking_code"] ?? "", 3, 100));
         need(preg_match('/^[A-Za-z0-9][A-Za-z0-9 _-]{2,99}$/D', $tracking), "کد رهگیری ارسال معتبر نیست.");
         return [$carrier, $tracking];
+    }
+    public function updateShipmentException(string $oid, array $data, array $session): array
+    {
+        $actor = $this->admin($session);
+        $state = $data["state"] ?? "";
+        need(in_array($state, ["failed", "returned", "resumed"], true), "وضعیت حمل معتبر نیست.");
+        $notes = txt($data["notes"] ?? "", 2, 500);
+        return $this->db->tx(function () use ($oid, $state, $notes, $session, $actor) {
+            $order = $this->db->lock("SELECT status FROM orders WHERE id=?", [$oid]);
+            need($order, "سفارش پیدا نشد.", 404);
+            need($order["status"] === "shipped" &&
+                $this->db->get("SELECT order_id FROM order_shipments WHERE order_id=?", [$oid]),
+                "وضعیت حمل فقط برای مرسوله در راه قابل ثبت است.", 409);
+            $previous = $this->db->get("SELECT state,notes FROM shipment_exceptions WHERE order_id=?", [$oid]);
+            if ($previous && $previous["state"] === $state && $previous["notes"] === $notes) {
+                return $this->order($oid, $session, true);
+            }
+            need($state !== "resumed" || in_array($previous["state"] ?? "", ["failed", "returned"], true),
+                "برای ارسال مجدد باید ابتدا مشکل تحویل یا برگشت از حمل ثبت شده باشد.", 409);
+            if ($previous) {
+                $this->db->run("UPDATE shipment_exceptions SET state=?,notes=?,updated_at=? WHERE order_id=?",
+                    [$state, $notes, dt(), $oid]);
+            } else {
+                $this->db->run("INSERT INTO shipment_exceptions(state,notes,updated_at,order_id) VALUES(?,?,?,?)",
+                    [$state, $notes, dt(), $oid]);
+            }
+            $this->db->run("UPDATE orders SET updated_at=? WHERE id=?", [dt(), $oid]);
+            $this->audit($actor, "shipment.exception", $oid, ["state" => $state, "notes" => $notes]);
+            return $this->order($oid, $session, true);
+        });
     }
     public function updateShipment(string $oid, array $d, array $s): array
     {

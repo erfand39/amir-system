@@ -450,10 +450,11 @@ function orderTimeline(order) {
   return `<ol class="order-history mt" aria-label="مراحل سفارش">${labels.map((label, index) =>
     `<li${index === Math.max(0, current) ? ' aria-current="step"' : ""}>${index <= Math.max(0, current) ? "✓ " : ""}${label}${times[index] ? " · " + esc(stamp(times[index], true)) : ""}</li>`).join("")}</ol>`;
 }
+const shipmentStates = { failed: "تحویل ناموفق", returned: "برگشت از حمل", resumed: "ارسال مجدد" };
 function shipmentSummary(o) {
   const ship = o.shipment;
   if (!ship) return "";
-  return `<section class="notice shipment-summary"><h3>اطلاعات ارسال</h3><p>${esc(ship.carrier)} — کد رهگیری <bdi dir="ltr">${esc(ship.tracking_code)}</bdi> <button type="button" class="btn secondary small no-print" data-copy-tracking="${esc(ship.tracking_code)}">کپی کد رهگیری</button></p>${ship.shipped_at || ship.delivered_at ? `<p class="small">${ship.shipped_at ? "ارسال " + stamp(ship.shipped_at, true) : ""}${ship.shipped_at && ship.delivered_at ? " · " : ""}${ship.delivered_at ? "تحویل " + stamp(ship.delivered_at, true) : ""}</p>` : ""}</section>`;
+  return `<section class="notice shipment-summary"><h3>اطلاعات ارسال</h3><p>${esc(ship.carrier)} — کد رهگیری <bdi dir="ltr">${esc(ship.tracking_code)}</bdi> <button type="button" class="btn secondary small no-print" data-copy-tracking="${esc(ship.tracking_code)}">کپی کد رهگیری</button></p>${o.status === "shipped" && o.shipment_exception ? `<p role="status">${shipmentStates[o.shipment_exception.state]} · ${stamp(o.shipment_exception.updated_at, true)}</p>` : ""}${ship.shipped_at || ship.delivered_at ? `<p class="small">${ship.shipped_at ? "ارسال " + stamp(ship.shipped_at, true) : ""}${ship.shipped_at && ship.delivered_at ? " · " : ""}${ship.delivered_at ? "تحویل " + stamp(ship.delivered_at, true) : ""}</p>` : ""}</section>`;
 }
 function customerOrderActions(o) {
   const transferOpen = o.payment_method === "transfer" && o.payment_status === "unpaid" &&
@@ -609,6 +610,7 @@ const adminFilterOptions = {
     ["transfer_review", "رسید واریز در انتظار بررسی"],
     ["unknown_payments", "پرداخت آنلاین نامشخص"],
     ["ready_to_pack", "صف آماده‌سازی"],
+    ["shipping_exceptions", "مشکل تحویل مرسوله"],
     ["return_expected", "مرجوعی در انتظار انبار"],
   ],
   users: [...Object.entries(userRoles), ["inactive", "حساب غیرفعال"]],
@@ -668,7 +670,7 @@ async function adminPage() {
       )
       .join(
         "",
-      )}</div><section class="card notice-list"><h3>نیازمند رسیدگی</h3><p>${num(data.new_messages)} پیام تازه در پشتیبانی</p><p>${num(data.pending_reviews)} دیدگاه در انتظار بررسی</p><ul class="order-history"><li><a class="text-link" href="/admin?section=orders&status=ready_to_pack">${num(data.ready_to_pack)} سفارش در صف آماده‌سازی</a></li><li><a class="text-link" href="/admin?section=orders&status=transfer_review">${num(data.transfer_review)} رسید واریز در انتظار تأیید</a></li><li><a class="text-link" href="/admin?section=orders&status=unknown_payments">${num(data.unknown_payments)} پرداخت آنلاین نامشخص</a></li><li><a class="text-link" href="/admin?section=orders&status=payment_review">${num(data.payment_review)} دریافت دیرهنگام نیازمند رسیدگی</a></li><li><a class="text-link" href="/admin?section=orders&status=return_expected">${num(data.returns_expected)} مرجوعی در انتظار دریافت انبار</a></li></ul><div class="button-row"><a class="btn secondary small" href="/admin?section=orders">مدیریت سفارش‌ها</a><a class="btn secondary small" href="/admin?section=stock_movements">بررسی انبار</a></div></section><section class="card notice-list"><h3>کنترل‌های فروشگاه</h3><p>مبلغ سفارش در سرور محاسبه می‌شود. موجودی و سندهای مالی با عملیات مربوط به خود ثبت می‌شوند. برای قیمت، گارانتی و مشخصات کالا اطلاعات تأییدشده وارد کنید.</p></section>`;
+      )}</div><section class="card notice-list"><h3>نیازمند رسیدگی</h3><p>${num(data.new_messages)} پیام تازه در پشتیبانی</p><p>${num(data.pending_reviews)} دیدگاه در انتظار بررسی</p><ul class="order-history"><li><a class="text-link" href="/admin?section=orders&status=ready_to_pack">${num(data.ready_to_pack)} سفارش در صف آماده‌سازی</a></li><li><a class="text-link" href="/admin?section=orders&status=transfer_review">${num(data.transfer_review)} رسید واریز در انتظار تأیید</a></li><li><a class="text-link" href="/admin?section=orders&status=unknown_payments">${num(data.unknown_payments)} پرداخت آنلاین نامشخص</a></li><li><a class="text-link" href="/admin?section=orders&status=payment_review">${num(data.payment_review)} دریافت دیرهنگام نیازمند رسیدگی</a></li><li><a class="text-link" href="/admin?section=orders&status=shipping_exceptions">${num(data.shipping_exceptions)} مرسوله نیازمند پیگیری</a></li><li><a class="text-link" href="/admin?section=orders&status=return_expected">${num(data.returns_expected)} مرجوعی در انتظار دریافت انبار</a></li></ul><div class="button-row"><a class="btn secondary small" href="/admin?section=orders">مدیریت سفارش‌ها</a><a class="btn secondary small" href="/admin?section=stock_movements">بررسی انبار</a></div></section><section class="card notice-list"><h3>کنترل‌های فروشگاه</h3><p>مبلغ سفارش در سرور محاسبه می‌شود. موجودی و سندهای مالی با عملیات مربوط به خود ثبت می‌شوند. برای قیمت، گارانتی و مشخصات کالا اطلاعات تأییدشده وارد کنید.</p></section>`;
   } else if (adminKind === "health") {
     const data = await api("admin/health");
     const rows = [...data.checks, ...data.deployment_checks];
@@ -1013,6 +1015,7 @@ async function showAdminOrder(oid) {
       "refund-item-return": "بازپرداخت مرجوعی قلم",
       "order.address_updated": "اصلاح اطلاعات تحویل",
       "order.shipment_updated": "اصلاح کد رهگیری ارسال",
+      "shipment.exception": shipmentStates[details.state],
     }[e.action];
     return label ? `<li>${esc(label)} <small class="muted">${stamp(e.created_at, true)}${e.actor ? " · " + esc(e.actor) : ""}</small></li>` : "";
   }).join("");
@@ -1027,6 +1030,7 @@ async function showAdminOrder(oid) {
     <div class="order-actions">
       ${["pending_payment", "confirmed", "processing"].includes(o.status) ? `<details class="order-action"><summary>اصلاح اطلاعات تحویل</summary><form id="order-address-form" data-id="${esc(oid)}"><div class="form-grid">${field("customer_name", "تحویل‌گیرنده", o.customer_name, "text", true)}${field("mobile", "شماره همراه", o.mobile, "tel", true)}${field("province", "استان", o.province, "text", true)}${field("city", "شهر", o.city, "text", true)}${field("address", "نشانی", o.address, "textarea", true, "wide")}${field("postal_code", "کد پستی", o.postal_code, "text", true)}</div><div class="form-error" role="alert"></div><button class="btn secondary">ذخیره اطلاعات تحویل</button></form></details>` : ""}
       ${o.status === "shipped" || (o.status === "delivered" && !o.shipment?.delivered_at) ? `<details class="order-action"><summary>${o.status === "delivered" ? "تکمیل سابقه تحویل قبلی" : (o.shipment ? "اصلاح رهگیری" : "تکمیل رهگیری ارسال قبلی")}</summary><form id="order-shipment-form" data-id="${esc(oid)}"><div class="form-grid">${field("carrier", "شرکت حمل یا روش ارسال", o.shipment?.carrier || "", "text", true)}${field("tracking_code", "کد رهگیری مرسوله", o.shipment?.tracking_code || "", "text", true)}${o.status === "delivered" ? field("delivered_at", "زمان واقعی تحویل به وقت دستگاه", "", "datetime-local", true) : ""}</div><div class="form-error" role="alert"></div><button class="btn secondary">ذخیره رهگیری</button></form></details>` : ""}
+      ${o.status === "shipped" && o.shipment ? `<details class="order-action"><summary>ثبت وضعیت حمل</summary><form id="shipment-exception-form" data-id="${esc(oid)}">${select("state", "وضعیت حمل", Object.entries(shipmentStates).filter(([key]) => key !== "resumed" || ["failed", "returned"].includes(o.shipment_exception?.state)))}${field("notes", "توضیح برای پیگیری داخلی", o.shipment_exception?.notes || "", "text", true)}<div class="form-error" role="alert"></div><button class="btn secondary">ثبت وضعیت حمل</button></form></details>` : ""}
       ${next.filter((x) => x !== "shipped").length ? `<form id="order-status-form" class="order-action" data-id="${esc(oid)}">${select("status", "تغییر وضعیت", next.filter((x) => x !== "shipped").map((x) => [x, statuses[x]]))}<div class="form-error" role="alert"></div><button class="btn">ثبت وضعیت</button></form>` : ""}
       ${next.includes("shipped") ? `<form id="ship-order-form" class="order-action" data-id="${esc(oid)}"><h3>ثبت ارسال</h3><div class="form-grid">${field("carrier", "شرکت حمل یا روش ارسال", "", "text", true)}${field("tracking_code", "کد رهگیری مرسوله", "", "text", true)}</div><div class="form-error" role="alert"></div><button class="btn">ثبت ارسال و کد رهگیری</button></form>` : ""}
       ${o.status === "shipped" && o.payment_status === "unpaid" ? '<p class="notice">پس از ثبت دریافت وجه، ثبت تحویل فعال می‌شود.</p>' : ""}
@@ -1037,8 +1041,29 @@ async function showAdminOrder(oid) {
     </div>
     ${adminItemReturns(o, owner)}
     ${orderEvents ? `<details class="order-action"><summary>سوابق سفارش</summary><ol class="order-history">${orderEvents}</ol></details>` : ""}
-    <div class="button-row mt">${o.can_recheck_online ? `<button type="button" class="btn secondary" data-recheck-payment="${esc(oid)}" data-admin-payment="1">استعلام از درگاه</button>` : ""}<a class="text-link" href="/invoice/${encodeURIComponent(oid)}">مشاهده صورت‌حساب ${icon("arrow")}</a></div></section>`;
+    <div class="button-row mt">${["confirmed","processing","shipped"].includes(o.status) ? `<button type="button" class="btn secondary" data-print-order-slip="${esc(oid)}" data-print-kind="pick">چاپ لیست برداشت</button><button type="button" class="btn secondary" data-print-order-slip="${esc(oid)}" data-print-kind="label">چاپ برچسب ارسال</button>` : ""}${o.can_recheck_online ? `<button type="button" class="btn secondary" data-recheck-payment="${esc(oid)}" data-admin-payment="1">استعلام از درگاه</button>` : ""}<a class="text-link" href="/invoice/${encodeURIComponent(oid)}">مشاهده صورت‌حساب ${icon("arrow")}</a></div></section>`;
   target.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+async function printOrderSlip(id, kind) {
+  const order = await api("admin/orders/" + encodeURIComponent(id));
+  const previous = $("#order-print-slip");
+  if (previous) previous.remove();
+  const sheet = document.createElement("section");
+  sheet.id = "order-print-slip";
+  sheet.hidden = true;
+  const rows = kind === "pick" ? order.items.map((item) =>
+    `<tr><td>${esc(item.title)}</td><td><bdi>${esc(item.sku || "—")}</bdi></td><td>${esc(item.shelf || "—")}</td><td>${num(item.qty)}</td></tr>`
+  ) : [];
+  sheet.innerHTML = `<h1>${kind === "pick" ? "لیست برداشت انبار" : "برچسب ارسال"}</h1><p><bdi>${esc(order.tracking_code)}</bdi></p>${kind === "pick" ?
+    `<table class="data"><thead><tr><th scope="col">کالا</th><th scope="col">کد کالا</th><th scope="col">قفسه</th><th scope="col">تعداد</th></tr></thead><tbody>${rows.join("")}</tbody></table>` :
+    `<p>تحویل‌گیرنده ${esc(order.customer_name)} · <bdi>${esc(order.mobile)}</bdi></p><p>${esc(order.province)}، ${esc(order.city)}، ${esc(order.address)}</p><p>کد پستی <bdi>${esc(order.postal_code)}</bdi></p>${order.shipment ? `<p>${esc(order.shipment.carrier)} · <bdi>${esc(order.shipment.tracking_code)}</bdi></p>` : ""}`}`;
+  document.body.append(sheet);
+  document.body.classList.add("printing-order-slip");
+  window.addEventListener("afterprint", () => {
+    sheet.remove();
+    document.body.classList.remove("printing-order-slip");
+  }, { once: true });
+  window.print();
 }
 async function refreshAdminOrder(id) {
   await route();
@@ -1213,7 +1238,9 @@ document.addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b || b.disabled) return;
   try {
-    if (b.dataset.copyTracking) {
+    if (b.dataset.printOrderSlip) {
+      await printOrderSlip(b.dataset.printOrderSlip, b.dataset.printKind);
+    } else if (b.dataset.copyTracking) {
       await navigator.clipboard.writeText(b.dataset.copyTracking);
       toast("کد رهگیری کپی شد.");
     } else if (b.dataset.compare) {
@@ -1614,6 +1641,10 @@ document.addEventListener("submit", (e) => {
         toast("اطلاعات سفارش ذخیره شد.");
         return refreshAdminOrder(form.dataset.id);
       }
+      case "shipment-exception-form":
+        await api("admin/orders/" + encodeURIComponent(form.dataset.id) + "/shipment-exception", { method: "PUT", body: data });
+        toast("وضعیت حمل ثبت شد.");
+        return refreshAdminOrder(form.dataset.id);
       case "order-status-form":
       case "ship-order-form": {
         if (form.id === "ship-order-form") data.status = "shipped";

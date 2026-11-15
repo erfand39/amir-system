@@ -29,7 +29,7 @@ SELECT COUNT(*) AS violations FROM (SELECT i.order_id,i.product_id,SUM(i.qty) qt
 SELECT COUNT(*) AS violations FROM coupons c LEFT JOIN (SELECT coupon_id,COUNT(*) n FROM orders WHERE coupon_id IS NOT NULL AND stock_released=0 GROUP BY coupon_id) o ON o.coupon_id=c.id WHERE c.used_count<>COALESCE(o.n,0);
 
 -- shipment_records
-SELECT COUNT(*) AS violations FROM orders o LEFT JOIN order_shipments s ON o.id=s.order_id WHERE (o.status IN ('shipped','delivered') AND s.order_id IS NULL) OR (s.order_id IS NOT NULL AND o.status NOT IN ('shipped','delivered','refunded')) OR (o.status='delivered' AND s.delivered_at IS NULL) OR (o.status='shipped' AND s.delivered_at IS NOT NULL) OR s.delivered_at<s.shipped_at;
+SELECT COUNT(*) AS violations FROM orders o LEFT JOIN order_shipments s ON o.id=s.order_id LEFT JOIN shipment_exceptions x ON o.id=x.order_id WHERE (o.status='delivered' AND x.state IN ('failed','returned')) OR (o.status IN ('shipped','delivered') AND s.order_id IS NULL) OR (s.order_id IS NOT NULL AND o.status NOT IN ('shipped','delivered','refunded')) OR (o.status='delivered' AND s.delivered_at IS NULL) OR (o.status='shipped' AND s.delivered_at IS NOT NULL) OR s.delivered_at<s.shipped_at;
 
 -- item_return_stock
 SELECT COUNT(*) AS violations FROM order_item_returns r JOIN order_items i ON i.id=r.order_item_id LEFT JOIN stock_movements m ON m.event_key=CONCAT('item-return:',r.id) WHERE (r.item_condition='sellable' AND (m.id IS NULL OR m.delta<>r.quantity OR m.product_id<>i.product_id OR m.order_id IS NULL OR m.order_id<>i.order_id OR m.reason<>'item_returned')) OR (COALESCE(r.item_condition,'')<>'sellable' AND m.id IS NOT NULL) OR (SELECT SUM(q.quantity) FROM order_item_returns q WHERE q.order_item_id=i.id)>i.qty;
