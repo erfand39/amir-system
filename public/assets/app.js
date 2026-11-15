@@ -382,6 +382,7 @@ let coupon = "",
   serviceId = "",
   detailQty = 1,
   deliveryAddresses = [];
+let deliveryDraft = {};
 async function cartPage() {
   const stored = sessionStorage.getItem("amir_pending_order");
   if (stored) {
@@ -420,19 +421,19 @@ async function cartPage() {
   return `${head("سبد خرید و تکمیل سفارش")}<div class="steps"><span class="${!delivery ? "active" : ""}">۱. بررسی سبد</span><span class="${delivery ? "active" : ""}">۲. اطلاعات تحویل</span><span>۳. ثبت و پرداخت</span></div><div class="cart-layout"><section>${
     !delivery
       ? `${quote.items.map((p, i) => `<article class="card cart-line"><img src="${esc(p.image || "/images/placeholder.svg")}" alt="${esc(p.title)}"><div><h3>${esc(p.title)}</h3><span class="small muted">${money(p.unit_price)} برای هر واحد</span></div><div class="stepper"><button data-cart-qty="${cart.findIndex((c) => c.id === p.id && (c.kind || "product") === p.kind)}" data-delta="-1" aria-label="کاهش تعداد">−</button><span>${num(p.qty)}</span><button data-cart-qty="${cart.findIndex((c) => c.id === p.id && (c.kind || "product") === p.kind)}" data-delta="1" aria-label="افزایش تعداد">+</button></div><div class="price line-price">${num(p.line_total)}<small>تومان</small></div><button class="icon-btn remove" data-remove="${cart.findIndex((c) => c.id === p.id && (c.kind || "product") === p.kind)}" aria-label="حذف ${esc(p.title)}">${icon("trash")}</button></article>`).join("")}<form id="coupon-form" class="card padded"><label class="small" for="coupon">کد تخفیف دارید؟</label><div class="coupon mt"><input id="coupon" name="coupon" value="${esc(coupon)}" placeholder="کد تخفیف" dir="ltr"><button class="btn secondary">بررسی کد</button></div>${quote.coupon_code ? `<p class="small stock-note mt">کد ${esc(quote.coupon_code)} معتبر است؛ تخفیف در مبلغ نهایی لحاظ شده است.</p>` : ""}<div class="form-error" role="alert"></div></form><form id="service-form" class="card padded mt">${select("service_id", "خدمات نصب", [["", "بدون خدمات نصب"], ...boot.services.map((s) => [s.id, `${s.title} — ${money(s.price_toman)}`])], serviceId)}<button class="btn secondary small">محاسبه خدمات</button><p class="small muted mt">درخواست نصب پس از ثبت، نیازمند هماهنگی زمان با فروشگاه است.</p></form>`
-      : `<form id="checkout-form" class="card padded"><h2>اطلاعات تحویل</h2>${deliveryAddresses.length ? select("saved_address", "انتخاب از آدرس‌های شما", [["", "آدرس جدید"], ...deliveryAddresses.map((a) => [a.id, a.name + " — " + a.city + "، " + a.address])]) : ""}<div class="form-grid">${field("customer_name", "نام و نام خانوادگی تحویل‌گیرنده", boot.user?.name || "", "text", true)}${field("mobile", "شماره همراه", boot.user?.phone || "", "tel", true)}${field("province", "استان", "", "text", true)}${field("city", "شهر", "", "text", true)}${field("address", "آدرس کامل", "", "textarea", true, "wide")}${field("postal_code", "کد پستی ۱۰ رقمی", "", "text", true)}</div>${!boot.user ? '<p class="small muted">برای دسترسی به سفارش از دستگاه‌های دیگر، وارد حساب شوید یا پس از خرید در همین مرورگر حساب بسازید.</p>' : ""}<h3>روش پرداخت</h3><div class="payment-options">${[
+      : `<form id="checkout-form" class="card padded"><h2>اطلاعات تحویل</h2>${deliveryAddresses.length ? select("saved_address", "انتخاب از آدرس‌های شما", [["", "آدرس جدید"], ...deliveryAddresses.map((a) => [a.id, a.name + " — " + a.city + "، " + a.address])]) : ""}<div class="form-grid">${field("customer_name", "نام و نام خانوادگی تحویل‌گیرنده", deliveryDraft.customer_name ?? boot.user?.name ?? "", "text", true)}${field("mobile", "شماره همراه", deliveryDraft.mobile ?? boot.user?.phone ?? "", "tel", true)}${field("province", "استان", deliveryDraft.province ?? "", "text", true)}${field("city", "شهر", deliveryDraft.city ?? "", "text", true)}${field("address", "آدرس کامل", deliveryDraft.address ?? "", "textarea", true, "wide")}${field("postal_code", "کد پستی ۱۰ رقمی", deliveryDraft.postal_code ?? "", "text", true)}</div>${!boot.user ? '<p class="small muted">برای دسترسی به سفارش از دستگاه‌های دیگر، وارد حساب شوید یا پس از خرید در همین مرورگر حساب بسازید.</p>' : ""}<h3>روش پرداخت</h3><div class="payment-options">${[
           ["online", "درگاه آنلاین", boot.payment.online],
           ["cod", "پرداخت در محل", boot.payment.cod],
           ["transfer", "واریز بانکی", boot.payment.transfer],
         ]
           .filter((x) => x[2])
           .map(
-            ([v, t], i) =>
-              `<label class="payment-option"><input type="radio" name="payment_method" value="${v}" ${i === 0 ? "checked" : ""}>${t}</label>`,
+            ([v, t], i, enabled) =>
+              `<label class="payment-option"><input type="radio" name="payment_method" value="${v}" ${(enabled.some(([method]) => method === deliveryDraft.payment_method) ? deliveryDraft.payment_method === v : i === 0) ? "checked" : ""}>${t}</label>`,
           )
           .join(
             "",
-          )}</div>${!Object.values(boot.payment).some(Boolean) ? '<div class="notice error">هیچ روش پرداختی توسط فروشگاه فعال نشده است.</div>' : ""}<div class="notice">با ثبت سفارش، موجودی رزرو و شماره پیگیری ایجاد می‌شود. پرداخت آنلاین فقط پس از تأیید درگاه نهایی خواهد شد.</div><div class="form-error" role="alert"></div><div class="button-row"><button class="btn" ${!Object.values(boot.payment).some(Boolean) ? "disabled" : ""}>${money(quote.total_amount)} · ثبت سفارش ${icon("arrow")}</button><a class="btn secondary" href="/cart">بازگشت به سبد</a></div></form>`
+          )}</div>${!Object.values(boot.payment).some(Boolean) ? '<div class="notice error">هیچ روش پرداختی توسط فروشگاه فعال نشده است.</div>' : ""}<div class="notice">با ثبت سفارش، موجودی رزرو و شماره پیگیری ایجاد می‌شود. پرداخت آنلاین فقط پس از تأیید درگاه نهایی خواهد شد.</div><div class="form-error" role="alert"></div><div class="button-row checkout-actions"><button class="btn" ${!Object.values(boot.payment).some(Boolean) ? "disabled" : ""}>${money(quote.total_amount)} · ثبت سفارش ${icon("arrow")}</button><a class="btn secondary" href="/cart">بازگشت به سبد</a></div></form>`
   }</section>${summary(quote, !delivery)}</div>`;
 }
 async function authPage(register = false, setup = false) {
@@ -1059,6 +1060,7 @@ async function compareView() {
   $("#dialog").showModal();
 }
 function completeCheckout() {
+  deliveryDraft = {};
   sessionStorage.removeItem("amir_pending_order");
   cart = [];
   coupon = "";
@@ -1074,7 +1076,7 @@ async function submitCheckout(command, retry = false) {
   } catch (e) {
     if (e.requestId && [400, 404, 409, 422].includes(e.status)) {
       sessionStorage.removeItem("amir_pending_order");
-      if (retry) {
+      if (retry || e.status === 409) {
         await route();
         toast(e.message, true);
         return;
@@ -1367,6 +1369,7 @@ document.addEventListener("click", async (e) => {
     else if (b.dataset.action === "close-editor")
       $("#admin-editor").replaceChildren();
     else if (b.dataset.action === "logout") {
+      deliveryDraft = {};
       await api("auth/logout", { method: "POST", body: {} });
       boot = await api("bootstrap");
       await navigate("/login");
@@ -1452,6 +1455,7 @@ document.addEventListener("submit", (e) => {
         serviceId = data.service_id;
         return route();
       case "checkout-form": {
+        deliveryDraft = data;
         const stored = sessionStorage.getItem("amir_pending_order");
         if (stored) return submitCheckout(JSON.parse(stored));
         delete data.saved_address;
@@ -1743,6 +1747,9 @@ function showInstall(ios) {
 if (/iPhone|iPad|iPod/.test(navigator.userAgent))
   setTimeout(() => showInstall(true), 4000);
 
+document.addEventListener("input", (e) => {
+  if (e.target.form?.id === "checkout-form") deliveryDraft = formData(e.target.form);
+});
 document.addEventListener("change", (e) => {
   if (e.target.name !== "saved_address") return;
   const a = deliveryAddresses.find((a) => a.id === e.target.value);
@@ -1757,4 +1764,5 @@ document.addEventListener("change", (e) => {
     ["postal_code", "postal_code"],
   ])
     form.elements[field].value = source[key] || "";
+  deliveryDraft = formData(form);
 });

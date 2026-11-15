@@ -1,9 +1,9 @@
-const CACHE = "amir-shell-v2.5.0-558645de";
+const CACHE = "amir-shell-v2.5.0-673216a5";
 const ASSETS = [
   "/assets/Vazirmatn.woff2",
   "/offline.html",
-  "/assets/style.2.5.0.fdb9b3be.min.css",
-  "/assets/app.2.5.0.558645de.min.js",
+  "/assets/style.2.5.0.86b4c634.min.css",
+  "/assets/app.2.5.0.673216a5.min.js",
   "/images/placeholder.svg",
   "/images/icons/icon-192.png",
 ];

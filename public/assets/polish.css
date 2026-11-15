@@ -1631,3 +1631,13 @@
     font-size: 13px;
   }
 }
+
+@media screen and (max-width: 800px) {
+  .checkout-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    padding-block: 0.75rem max(0.75rem, env(safe-area-inset-bottom));
+    background: var(--surface);
+  }
+}

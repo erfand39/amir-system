@@ -1024,12 +1024,12 @@ final class Shop
                 : $this->db->get("SELECT * FROM products WHERE id=?", [$pid]);
             need(
                 $p && (int) $p["active"] === 1 && (int) $p["stock"] >= $qty,
-                "موجودی کالا کافی نیست.",
+                $p ? "موجودی «" . $p["title"] . "» کافی نیست." : "یکی از کالاهای سبد دیگر در دسترس نیست.",
                 409,
             );
             need(
                 (int) $p["price_toman"] === $prices[$pid],
-                "قیمت کالا تغییر کرده است؛ سبد را بررسی کنید.",
+                "قیمت «" . $p["title"] . "» تغییر کرده است؛ سبد را بررسی کنید.",
                 409,
             );
         }
