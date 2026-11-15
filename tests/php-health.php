@@ -38,8 +38,8 @@ function verify_health(bool $condition, string $label): void
 $report = health_report($s);
 verify_health($report["integrity_ok"], "fresh data reconciles");
 verify_health(
-    count($report["checks"]) === 10,
-    "ten shared integrity queries execute",
+    count($report["checks"]) === 12,
+    "twelve shared integrity queries execute",
 );
 verify_health(
     $report["deployment_checks"][0]["status"] === ($db->driver === "mysql" ? "pass" : "warn"),

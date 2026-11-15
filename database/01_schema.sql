@@ -1,4 +1,4 @@
--- Amir System cPanel database pack 1.2.0; fresh install only.
+-- Amir System cPanel database pack 1.3.0; fresh install only.
 -- MySQL 8.0.21+ or MariaDB 10.6+. No CREATE DATABASE / USE / GRANT.
 SET NAMES utf8mb4;
 SET SESSION time_zone = '+00:00';
@@ -422,4 +422,20 @@ CREATE TABLE IF NOT EXISTS product_inventory (
   reorder_level INTEGER NOT NULL DEFAULT 3,
   FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
   CHECK(reorder_level BETWEEN 0 AND 1000000)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS order_item_returns (
+  id VARCHAR(64) PRIMARY KEY,
+  order_item_id VARCHAR(100) NOT NULL,
+  quantity INTEGER NOT NULL,
+  reason VARCHAR(500) NOT NULL,
+  item_condition VARCHAR(24),
+  received_at DATETIME,
+  refund_payment_id VARCHAR(64) UNIQUE,
+  created_at DATETIME NOT NULL,
+  FOREIGN KEY(order_item_id) REFERENCES order_items(id),
+  FOREIGN KEY(refund_payment_id) REFERENCES payments(id),
+  CHECK(quantity>0),
+  CHECK((item_condition IS NULL AND received_at IS NULL) OR
+        (item_condition IS NOT NULL AND received_at IS NOT NULL AND item_condition IN ('sellable','damaged')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -59,7 +59,7 @@ check(
 check(count(($db->driver === "sqlite" ? $db->all("PRAGMA foreign_key_check") : [])) === 0, "foreign keys valid");
 $health = health_report($s);
 check(
-    $health["integrity_ok"] === true && count($health["checks"]) === 10,
+    $health["integrity_ok"] === true && count($health["checks"]) === 12,
     "shared integrity checks pass on clean database",
 );
 check(

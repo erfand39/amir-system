@@ -390,7 +390,7 @@ final class Shop
             $exists = null;
         }
         if ($exists) {
-            need((int)decode_json($exists['value']) === 4, 'نسخه دیتابیس با برنامه سازگار نیست.', 503);
+            need((int)decode_json($exists['value']) === 5, 'نسخه دیتابیس با برنامه سازگار نیست.', 503);
             return;
         }
         need($bootstrap, 'نصب دیتابیس کامل نشده است؛ فایل کاتالوگ اولیه را وارد کنید.', 503);
@@ -493,8 +493,8 @@ final class Shop
                 "transfer_enabled" => false,
                 "currency_rate" => 188000,
             ]);
-            $this->settingSave("database_pack_version", "1.2.0");
-            $this->settingSave("schema_version", 4);
+            $this->settingSave("database_pack_version", "1.3.0");
+            $this->settingSave("schema_version", 5);
             $articles = [
                 [
                     "راهنمای انتخاب سیستم صوتی خودرو",
@@ -1162,6 +1162,12 @@ final class Shop
             (bool) $this->db->get("SELECT id FROM payments WHERE order_id=? AND status IN ('requesting','unknown') LIMIT 1", [$oid]);
         unset($o["quote_json"], $o["guest_session_id"]);
         if ($admin) {
+            $o["item_returns"] = $this->db->all(
+                "SELECT r.*,i.title,p.amount refund_amount,p.reference refund_reference
+                 FROM order_item_returns r JOIN order_items i ON i.id=r.order_item_id
+                 LEFT JOIN payments p ON p.id=r.refund_payment_id WHERE i.order_id=? ORDER BY r.created_at,r.id",
+                [$oid],
+            );
             $o["next_statuses"] = $this->nextOrderStatuses($o);
             $o["unresolved_payments"] = $o["payment_method"] === "online" && $o["payment_status"] === "unpaid"
                 ? $this->db->all(
@@ -1773,6 +1779,8 @@ final class Shop
                 "فقط وجه دریافت‌شده قابل برگشت است.",
                 409,
             );
+            need(!$this->db->get("SELECT r.id FROM order_item_returns r JOIN order_items i ON i.id=r.order_item_id WHERE i.order_id=? LIMIT 1", [$oid]),
+                "برای این سفارش مرجوعیِ قلم ثبت شده است. برگشت کامل از این فرم قابل ثبت نیست.", 409);
             need(
                 !$this->db->get("SELECT id FROM payments WHERE reference=?", [
                     $ref,
@@ -1831,6 +1839,101 @@ final class Shop
             }
             return $this->order($oid, $s, true);
         });
+    }
+
+    public function itemReturn(string $oid, string $operation, array $data, array $session): array
+    {
+        $actor = $this->admin($session, $operation === "refund-item-return");
+        $id = txt($data["return_id"] ?? "", 16, 64);
+        need(preg_match('/^[A-Za-z0-9_-]+$/D', $id), "شناسه مرجوعی معتبر نیست.");
+        return $this->db->tx(function () use ($oid, $operation, $data, $session, $actor, $id) {
+            $order = $this->db->lock("SELECT * FROM orders WHERE id=?", [$oid]);
+            need($order, "سفارش پیدا نشد.", 404);
+            need($order["status"] === "delivered" && $order["payment_status"] === "paid" && !$order["stock_released"],
+                "مرجوعی قلم فقط برای سفارش تحویل‌شده و پرداخت‌شده قابل ثبت است.", 409);
+            $case = $this->db->get(
+                "SELECT r.*,i.product_id,i.qty ordered_quantity,i.line_total
+                 FROM order_item_returns r JOIN order_items i ON i.id=r.order_item_id
+                 WHERE r.id=? AND i.order_id=?", [$id, $oid],
+            );
+            if ($operation === "create-item-return") {
+                $item = txt($data["item_id"] ?? "", 1, 100);
+                $quantity = integer_value($data["quantity"] ?? null, 1, 1000000);
+                $reason = txt($data["reason"] ?? "", 2, 500);
+                if ($case) {
+                    need($case["order_item_id"] === $item && (int)$case["quantity"] === $quantity && $case["reason"] === $reason,
+                        "این شناسه برای مرجوعی دیگری ثبت شده است.", 409);
+                    return $this->order($oid, $session, true);
+                }
+                $line = $this->db->get("SELECT qty FROM order_items WHERE id=? AND order_id=?", [$item, $oid]);
+                need($line, "قلم سفارش پیدا نشد.", 404);
+                $reserved = (int)$this->db->get(
+                    "SELECT COALESCE(SUM(quantity),0) n FROM order_item_returns WHERE order_item_id=?", [$item],
+                )["n"];
+                need($reserved + $quantity <= (int)$line["qty"], "تعداد مرجوعی از تعداد خرید بیشتر است.", 409);
+                $this->db->run("INSERT INTO order_item_returns(id,order_item_id,quantity,reason,created_at) VALUES(?,?,?,?,?)",
+                    [$id, $item, $quantity, $reason, dt()]);
+            } else {
+                need($case, "مرجوعی پیدا نشد.", 404);
+                if ($operation === "receive-item-return") {
+                    $condition = $data["condition"] ?? "";
+                    need(in_array($condition, ["sellable", "damaged"], true), "وضعیت سلامت کالا را مشخص کنید.");
+                    if ($case["received_at"] !== null) {
+                        need($case["item_condition"] === $condition, "وضعیت دریافت قبلاً ثبت شده است.", 409);
+                        return $this->order($oid, $session, true);
+                    }
+                    if ($condition === "sellable") {
+                        $product = $this->db->lock("SELECT stock FROM products WHERE id=?", [$case["product_id"]]);
+                        $balance = (int)$product["stock"] + (int)$case["quantity"];
+                        need($balance <= 2147483647, "موجودی از سقف قابل ثبت بیشتر است.", 409);
+                        $this->db->run("UPDATE products SET stock=?,version=version+1,updated_at=? WHERE id=?",
+                            [$balance, dt(), $case["product_id"]]);
+                        $this->movement($case["product_id"], (int)$case["quantity"], $balance,
+                            "item_returned", "item-return:" . $id, $oid, $actor);
+                    }
+                    $this->db->run("UPDATE order_item_returns SET item_condition=?,received_at=? WHERE id=?",
+                        [$condition, dt(), $id]);
+                } elseif ($operation === "refund-item-return") {
+                    if (!$this->recordItemRefund($order, $case, $data)) {
+                        return $this->order($oid, $session, true);
+                    }
+                } else {
+                    throw new HttpError("عملیات پشتیبانی نمی‌شود.", 404);
+                }
+            }
+            $this->audit($actor, $operation, $oid, ["return_id" => $id]);
+            return $this->order($oid, $session, true);
+        });
+    }
+
+    private function recordItemRefund(array $order, array $case, array $data): bool
+    {
+        need($case["received_at"] !== null && ($data["confirmed"] ?? false) === true,
+            "پس از دریافت کالا، بازپرداخت واقعی را تأیید کنید.", 409);
+        $amount = integer_value($data["amount"] ?? null, 1);
+        $reference = en(txt($data["reference"] ?? "", 5, 100));
+        if ($case["refund_payment_id"]) {
+            $prior = $this->db->get("SELECT amount,reference FROM payments WHERE id=?", [$case["refund_payment_id"]]);
+            need($prior && (int)$prior["amount"] === $amount && $prior["reference"] === $reference,
+                "بازپرداخت قبلاً با اطلاعات دیگری ثبت شده است.", 409);
+            return false;
+        }
+        $totalPreviouslyRefunded = (int)$this->db->get(
+            "SELECT COALESCE(SUM(amount),0) n FROM payments WHERE order_id=? AND method='refund'",
+            [$order["id"]],
+        )["n"];
+        $lineLimit = intdiv((int)$case["line_total"] * (int)$case["quantity"], (int)$case["ordered_quantity"]);
+        $max = min((int)$order["subtotal"] - (int)$order["coupon_amount"], (int)$order["total_amount"] - 1);
+        need($amount <= $lineLimit && $totalPreviouslyRefunded + $amount <= $max,
+            "مبلغ بیشتر از سقف بازپرداخت قلم یا مانده سفارش است.", 409);
+        $payment = uid("refund-");
+        $this->db->run(
+            "INSERT INTO payments(id,order_id,reference,amount,status,method,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+            [$payment, $order["id"], $reference, $amount, "refunded", "refund", dt(), dt()],
+        );
+        $this->db->run("UPDATE order_item_returns SET refund_payment_id=? WHERE id=?", [$payment, $case["id"]]);
+        $this->ledger($order["id"], "item-refund:" . $case["id"], "برگشت وجه قلم سفارش", $amount, true);
+        return true;
     }
 
 }

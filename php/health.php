@@ -18,8 +18,8 @@ function health_report(Shop $shop): array
             $sql = $check["sql"];
             if ($db->driver === "sqlite") {
                 $sql = str_replace(
-                    ["CONCAT('paid:',o.id)", "CONCAT('refund:',o.id)"],
-                    ["('paid:' || o.id)", "('refund:' || o.id)"],
+                    ["CONCAT('paid:',o.id)", "CONCAT('refund:',o.id)", "CONCAT('item-return:',r.id)", "CONCAT('item-refund:',r.id)"],
+                    ["('paid:' || o.id)", "('refund:' || o.id)", "('item-return:' || r.id)", "('item-refund:' || r.id)"],
                     $sql,
                 );
             }

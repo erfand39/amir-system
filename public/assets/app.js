@@ -176,7 +176,7 @@ const stockReasons = {
   initial: "موجودی اولیه", manual_in: "ورود کالا", manual_out: "خروج کالا",
   manual_adjust: "اصلاح شمارش", order_reserved: "رزرو سفارش",
   order_cancelled: "آزادسازی بعد از لغو", order_expired: "آزادسازی بعد از انقضا",
-  refund_returned: "بازگشت کالا به انبار",
+  refund_returned: "بازگشت کالا به انبار", item_returned: "مرجوعی قلم به موجودی",
 };
 const userRoles = { admin: "مدیر اصلی", manager: "مدیر فروش", customer: "مشتری" };
 const tag = (s) =>
@@ -965,6 +965,28 @@ async function showStockReceipt(id = "") {
   }
   editor.scrollIntoView({ behavior: "smooth", block: "start" });
 }
+function adminItemReturns(order, owner) {
+  if (order.status !== "delivered" || order.payment_status !== "paid") return "";
+  const orderId = esc(order.id);
+  const cases = order.item_returns.map((item) => {
+    const hidden = `<input type="hidden" name="return_id" value="${esc(item.id)}">`;
+    const formStart = `<form data-id="${orderId}" class="mt"`;
+    const formEnd = '<div class="form-error" role="alert"></div>';
+    return `<article class="order-action"><h4>${esc(item.title)} · ${num(item.quantity)} عدد</h4><p class="small">${esc(item.reason)}</p>
+      ${item.item_condition ? `<p class="small">دریافت ${stamp(item.received_at, true)} · ${item.item_condition === "sellable" ? "قابل فروش" : "معیوب"}</p>` :
+        `${formStart} data-item-return="receive">${hidden}${select("condition", "وضعیت کالا", [["sellable", "سالم و قابل فروش"], ["damaged", "معیوب"]])}${formEnd}<button class="btn secondary">ثبت دریافت کالا</button></form>`}
+      ${item.refund_payment_id ? `<p class="small">بازپرداخت ${money(item.refund_amount)} · <bdi>${esc(item.refund_reference)}</bdi></p>` :
+        owner && item.received_at ? `${formStart} data-item-return="refund">${hidden}${field("amount", "مبلغ واقعی بازپرداخت (تومان)", "", "number", true)}${field("reference", "مرجع بازپرداخت", "", "text", true)}<label class="check"><input type="checkbox" name="confirmed" required>مبلغ پس از لحاظ تخفیف واریز شد</label>${formEnd}<button class="btn secondary">ثبت سند بازپرداخت</button></form>` : ""}
+    </article>`;
+  }).join("");
+  const items = order.items.map((item) => {
+    const returned = order.item_returns.filter((row) => row.order_item_id === item.id).reduce((sum, row) => sum + Number(row.quantity), 0);
+    return [item.id, item.title + " · " + num(item.qty - returned) + " قابل ثبت", item.qty > returned];
+  }).filter(([, , available]) => available);
+  return `<section class="mt"><h3>مرجوعی اقلام</h3>${cases}
+    ${items.length ? `<details class="order-action"><summary>ثبت مرجوعی قلم</summary><form data-id="${orderId}" data-item-return="create"><input type="hidden" name="return_id" value="${commandId()}">${select("item_id", "قلم سفارش", items, "", true)}${field("quantity", "تعداد مرجوعی", 1, "number", true)}${field("reason", "علت مرجوعی", "", "text", true)}<div class="form-error" role="alert"></div><button class="btn secondary">ثبت مرجوعی</button></form></details>` : ""}
+  </section>`;
+}
 async function showAdminOrder(oid) {
   const o = await api("admin/orders/" + encodeURIComponent(oid));
   const target = $("#admin-editor");
@@ -985,6 +1007,9 @@ async function showAdminOrder(oid) {
       "payment.transfer_submitted": "ثبت مرجع واریز توسط مشتری",
       "payment.refunded": "ثبت بازپرداخت",
       "order.return_received": "دریافت کالا در انبار",
+      "create-item-return": "ثبت مرجوعی قلم",
+      "receive-item-return": "دریافت مرجوعی قلم",
+      "refund-item-return": "بازپرداخت مرجوعی قلم",
       "order.address_updated": "اصلاح اطلاعات تحویل",
       "order.shipment_updated": "اصلاح کد رهگیری ارسال",
     }[e.action];
@@ -1006,9 +1031,10 @@ async function showAdminOrder(oid) {
       ${o.status === "shipped" && o.payment_status === "unpaid" ? '<p class="notice">پس از ثبت دریافت وجه، ثبت تحویل فعال می‌شود.</p>' : ""}
       ${canRecord ? `<form id="record-payment-form" class="order-action" data-id="${esc(oid)}"><h3>ثبت دریافت وجه</h3><p class="small muted">مرجع را پس از تطبیق با دریافت واقعی ثبت کنید.</p>${field("reference", "شماره رسید یا مرجع دریافت", o.transfer_receipt?.reference || "", "text", true)}<div class="form-error" role="alert"></div><button class="btn secondary">ثبت دریافت تأییدشده</button></form>` : ""}
       ${owner ? o.unresolved_payments.map((payment) => `<form class="order-action" data-payment-review data-id="${esc(oid)}"><h3>رسیدگی به پرداخت نامشخص</h3><p class="small muted">سفارش و مبلغ را با پنل پذیرنده تطبیق دهید. در صورت وجود تراکنش، شناسهٔ درگاه را وارد و سپس «استعلام از درگاه» را بزنید. برای بستن درخواست فاقد تراکنش، ابتدا سفارش را ببندید و شناسه را خالی بگذارید.</p><input type="hidden" name="attempt_id" value="${esc(payment.id)}">${field("authority", "شناسهٔ درگاه (Authority)") }<label class="check"><input type="checkbox" name="confirmed" required>نتیجه را در پنل پذیرنده بررسی کردم</label><div class="form-error" role="alert"></div><button class="btn secondary">ثبت نتیجه بررسی</button></form>`).join("") : ""}
-      ${owner && o.payment_status === "paid" ? `<details class="order-action"><summary>ثبت برگشت کامل وجه</summary><form id="refund-form" data-id="${esc(oid)}"><p class="small muted">مرجع بازپرداخت انجام‌شده را وارد کنید.${shipped ? "" : " موجودی رزروشده به‌صورت خودکار آزاد می‌شود."}</p>${field("refund_reference", "مرجع بازپرداخت", "", "text", true)}${shipped && !o.stock_released ? '<label class="check"><input type="checkbox" name="restock">همه اقلام سالم دریافت شده و به موجودی فروش برمی‌گردند</label>' : ""}<label class="check"><input type="checkbox" name="confirmed" required>بازپرداخت کامل انجام شده است</label><div class="form-error" role="alert"></div><button class="btn secondary">ثبت سند برگشت وجه</button></form></details>` : ""}
+      ${owner && o.payment_status === "paid" && !o.item_returns.length ? `<details class="order-action"><summary>ثبت برگشت کامل وجه</summary><form id="refund-form" data-id="${esc(oid)}"><p class="small muted">مرجع بازپرداخت انجام‌شده را وارد کنید.${shipped ? "" : " موجودی رزروشده به‌صورت خودکار آزاد می‌شود."}</p>${field("refund_reference", "مرجع بازپرداخت", "", "text", true)}${shipped && !o.stock_released ? '<label class="check"><input type="checkbox" name="restock">همه اقلام سالم دریافت شده و به موجودی فروش برمی‌گردند</label>' : ""}<label class="check"><input type="checkbox" name="confirmed" required>بازپرداخت کامل انجام شده است</label><div class="form-error" role="alert"></div><button class="btn secondary">ثبت سند برگشت وجه</button></form></details>` : ""}
       ${o.status === "refunded" && !o.stock_released ? `<form id="return-form" class="order-action" data-id="${esc(oid)}"><h3>دریافت مرجوعی در انبار</h3><label class="check"><input type="checkbox" name="confirmed" required>همه اقلام سالم تحویل انبار شده و قابل فروش هستند</label><div class="form-error" role="alert"></div><button class="btn secondary">بازگرداندن اقلام به موجودی</button></form>` : ""}
     </div>
+    ${adminItemReturns(o, owner)}
     ${orderEvents ? `<details class="order-action"><summary>سوابق سفارش</summary><ol class="order-history">${orderEvents}</ol></details>` : ""}
     <div class="button-row mt">${o.can_recheck_online ? `<button type="button" class="btn secondary" data-recheck-payment="${esc(oid)}" data-admin-payment="1">استعلام از درگاه</button>` : ""}<a class="text-link" href="/invoice/${encodeURIComponent(oid)}">مشاهده صورت‌حساب ${icon("arrow")}</a></div></section>`;
   target.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1373,7 +1399,7 @@ document.addEventListener("submit", (e) => {
   e.preventDefault();
   formTask(form, async () => {
     const data = formData(form);
-    switch (form.matches("[data-payment-review]") ? "resolve-payment-form" : form.id) {
+    switch (form.dataset.itemReturn ? "item-return-form" : form.matches("[data-payment-review]") ? "resolve-payment-form" : form.id) {
       case "finance-filter":
         return navigate("/admin?" + new URLSearchParams({ section: "finance", from: data.from, to: data.to }));
       case "site-search":
@@ -1600,6 +1626,13 @@ document.addEventListener("submit", (e) => {
         await api("admin/orders/" + form.dataset.id + "/refund", { method: "POST", body: data });
         toast("سند برگشت وجه ثبت شد.");
         return refreshAdminOrder(form.dataset.id);
+      case "item-return-form": {
+        const action = form.dataset.itemReturn;
+        if (action === "refund") data.confirmed = form.elements.confirmed.checked;
+        await api("admin/orders/" + encodeURIComponent(form.dataset.id) + "/" + action + "-item-return", { method: "POST", body: data });
+        toast("عملیات مرجوعی ثبت شد.");
+        return refreshAdminOrder(form.dataset.id);
+      }
       case "return-form":
         await api("admin/orders/" + form.dataset.id + "/return", {
           method: "POST", body: { confirmed: form.elements.confirmed.checked },

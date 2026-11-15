@@ -230,5 +230,29 @@ check($cleaned["sessions"] >= 1 && $cleaned["rate_limits"] >= 1 &&
     !$db->get("SELECT id FROM sessions WHERE id=?", [$stale["id"]]) &&
     $db->get("SELECT id FROM rate_limits WHERE id='active-fixture'") &&
     $shop->session($owner["token"]), "Maintenance prunes old state and preserves active sessions and counters");
+$item = $shop->order($cod["id"], $owner, true)["items"][0];
+$return = ["return_id" => "item-return-fixture-001", "item_id" => $item["id"], "quantity" => 1, "reason" => "Returned fixture item"];
+$returnPath = $codPath . "/create-item-return";
+$call("POST", $returnPath, $return, $owner);
+$call("POST", $returnPath, $return, $owner);
+check(rejects(409, fn() => $call("POST", $returnPath,
+    array_replace($return, ["return_id" => "item-return-fixture-too-many", "quantity" => 2]), $owner)),
+    "Item return retries are idempotent and cannot exceed quantities purchased");
+$refundPath = $codPath . "/refund-item-return";
+$refund = ["return_id" => $return["return_id"], "reference" => "PARTIAL-COD-REFUND", "amount" => $item["unit_price"], "confirmed" => true];
+check(rejects(409, fn() => $call("POST", $refundPath, $refund, $owner)), "Item refund requires warehouse receipt");
+$stockBeforeReturn = $available();
+$receipt = ["return_id" => $return["return_id"], "condition" => "sellable"];
+$call("POST", $codPath . "/receive-item-return", $receipt, $owner);
+$call("POST", $codPath . "/receive-item-return", $receipt, $owner);
+check($available() === $stockBeforeReturn + 1, "Sellable item return restores only its own quantity once");
+$result = $call("POST", $refundPath, $refund, $owner);
+$call("POST", $refundPath, $refund, $owner);
+check($result["payment_status"] === "paid" && (int)$result["item_returns"][0]["refund_amount"] === (int)$refund["amount"] &&
+    (int)$db->get("SELECT COUNT(*) n FROM payments WHERE reference=?", [$refund["reference"]])["n"] === 1,
+    "Partial item refund preserves the order and records one payment");
+$call("POST", $returnPath, array_replace($return, ["return_id" => "item-return-fixture-damaged"]), $owner);
+$call("POST", $codPath . "/receive-item-return", ["return_id" => "item-return-fixture-damaged", "condition" => "damaged"], $owner);
+check($available() === $stockBeforeReturn + 1, "Damaged returns stay out of sellable inventory");
 check(health_report($shop)["integrity_ok"], "Inventory, payments, shipments and journals reconcile at the end");
 echo "Workflow checks passed: $checks\n";

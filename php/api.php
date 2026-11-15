@@ -499,6 +499,7 @@ final class API
                     "resolve-payment" => $this->payment->resolveUnknown($key, $b, $session),
                     "refund" => $s->refund($key, $b, $session),
                     "return" => $s->receiveReturn($key, $b, $session),
+                    "create-item-return", "receive-item-return", "refund-item-return" => $s->itemReturn($key, $parts[3], $b, $session),
                     default => throw new HttpError("مسیر درخواست پیدا نشد.", 404),
                 };
             }
